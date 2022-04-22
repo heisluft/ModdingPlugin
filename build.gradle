@@ -1,0 +1,79 @@
+plugins {
+  id 'java-gradle-plugin'
+  id 'signing'
+  id 'maven-publish'
+}
+
+group 'de.heisluft.modding'
+version '0.0.1+9'
+
+sourceCompatibility = targetCompatibility = JavaVersion.VERSION_1_8
+
+repositories {
+  mavenCentral()
+  maven {
+    url 'https://maven.minecraftforge.net/'
+  }
+  maven {
+    url 'https://heisluft.de/maven/'
+  }
+}
+
+dependencies {
+  implementation 'net.minecraftforge:artifactural:3.0.8'
+  implementation 'io.github.java-diff-utils:java-diff-utils:4.11'
+  implementation 'com.googlecode.json-simple:json-simple:1.4.0'
+}
+
+gradlePlugin.plugins.create('modDevPlugin') {
+  id = 'de.heisluft.modding.classic'
+  implementationClass = 'de.heisluft.modding.ClassicModdingPlugin'
+}
+
+
+// The below is needed so we automatically generate a Constants.java file dynamically *before* we import the project
+sourceSets.main.java.srcDir "$buildDir/generated/java"
+file("$buildDir/generated/java/de/heisluft/modding").mkdirs()
+file("$buildDir/generated/java/de/heisluft/modding/Constants.java").newWriter().withWriter {
+  w -> w << "package $group;\n\n" +
+      "/** Auto-Generated Class containing the plugin version. */\n" +
+      "public final class Constants {\n" +
+      "  /** The plugin version */\n" +
+      "  public static final String VERSION = \"$version\";\n" +
+      "}"
+}
+
+tasks.withType(JavaCompile) {
+  options.encoding = 'UTF-8'
+}
+
+task sourcesJar(type: Jar, dependsOn: classes) {
+  archiveClassifier.set 'sources'
+  from sourceSets.main.allSource
+}
+
+task javadocJar(type: Jar, dependsOn: javadoc) {
+  archiveClassifier.set 'javadoc'
+  from javadoc.destinationDir
+}
+
+publishing {
+  repositories.maven {
+    url mavenUrl
+    credentials {
+      username = mavenUsername
+      password = mavenPassword
+    }
+    authentication.withType(BasicAuthentication)
+  }
+  publications.create('maven', MavenPublication) {
+    it.from components.getByName('java')
+    it.artifact sourcesJar
+    it.artifact javadocJar
+  }
+}
+
+signing {
+  useGpgCmd()
+  sign publishing.publications.maven
+}
