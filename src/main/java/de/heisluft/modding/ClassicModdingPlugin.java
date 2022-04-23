@@ -28,6 +28,7 @@ public class ClassicModdingPlugin implements Plugin<Project> {
     });
     // We need to ensure binary compat with mojang. sorry, no NIO, Diamonds or lambdas for us.
     project.getTasks().withType(JavaCompile.class).forEach(javaCompile -> {
+      javaCompile.getOptions().setEncoding("UTF-8");
       javaCompile.setTargetCompatibility("1.5");
       javaCompile.setSourceCompatibility("1.5");
     });
@@ -39,11 +40,10 @@ public class ClassicModdingPlugin implements Plugin<Project> {
     TaskContainer tasks = project.getTasks();
     TaskProvider<DownloadTask> downloadMC = tasks.register("downloadMC", DownloadTask.class);
     downloadMC.configure(task -> task.getMCVersion().set(ext.getVersion()));
-    tasks.register("extractResources", ExtractResourcesTask.class, task -> {
+    tasks.register("makeAssetJar", Zip2ZipCopyTask.class, task -> {
       task.dependsOn(downloadMC);
       task.getInput().set(downloadMC.get().getOutput());
       task.getIncludedPaths().addAll(Arrays.asList("**.png", "**.gif"));
-      task.getOutputDir().set(project.file("src/main/resources/"));
     });
   }
 }

@@ -1,13 +1,14 @@
 package de.heisluft.modding;
 
 import org.gradle.api.DefaultTask;
-import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.InputFile;
 import org.gradle.api.tasks.OutputDirectory;
+import org.gradle.api.tasks.OutputFile;
 import org.gradle.api.tasks.TaskAction;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -24,19 +25,29 @@ import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-public abstract class ExtractResourcesTask extends DefaultTask {
+public abstract class Zip2ZipCopyTask extends DefaultTask {
   private static final Map<String, ?> PROPS = Collections.singletonMap("create", "true");
   private final List<String> includePatterns = new ArrayList<>();
 
   @InputFile
   public abstract RegularFileProperty getInput();
 
-  @OutputDirectory
-  public abstract DirectoryProperty getOutputDir();
+  @OutputFile
+  public abstract RegularFileProperty getOutput();
 
   @Input
   public List<String> getIncludedPaths(){
     return includePatterns;
+  }
+
+  private final FileSystem createFS(File at, boolean createFile) throws IOException {
+    Path p = at.toPath().toAbsolutePath();
+    if(!Files.isRegularFile(p) && createFile) Files.write(p, new byte[]{80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
+    return FileSystems.newFileSystem(URI.create("jar:file:/" + p.toString().replace('\\', '/')), PROPS);
+  }
+
+  public Zip2ZipCopyTask() {
+    getOutput().convention(getProject().getLayout().getBuildDirectory().dir(getName()).map(dir -> dir.file("resources.jar")));
   }
 
   private Predicate<Path> parsePattern(String pattern) {
@@ -49,7 +60,19 @@ public abstract class ExtractResourcesTask extends DefaultTask {
           builder.append(".*"); i++;
         } else builder.append("[^/]*");
         break;
-        case '/': builder.append("\\/"); break;
+        case '/':
+        case '\\':
+        case '[':
+        case ']':
+        case '(':
+        case ')':
+        case '{':
+        case '}':
+        case '|':
+        case '?':
+        case '+':
+        case '$':
+        case '^':
         case '.': builder.append('\\');
         default: builder.append(c);
       }
@@ -60,12 +83,12 @@ public abstract class ExtractResourcesTask extends DefaultTask {
 
   @TaskAction
   public void doAction() throws IOException {
-    Path out = getOutputDir().getAsFile().get().toPath();
+    File out = getOutput().getAsFile().get();
+    File in = getInput().getAsFile().get();
     Set<Predicate<Path>> patterns = includePatterns.stream().map(this::parsePattern).collect(Collectors.toSet());
-    URI uri = URI.create("jar:file:/" + getInput().get().getAsFile().getAbsolutePath().replace('\\', '/'));
-    try(FileSystem fs = FileSystems.newFileSystem(uri, PROPS)) {
-      Files.walk(fs.getPath("/")).filter(path -> patterns.stream().anyMatch(p -> p.test(path))).forEach(path -> {
-        Path dest = out.resolve(path.toString().substring(1)); // Works because all paths within a zip start with '/'
+    try(FileSystem inFs = createFS(in, false); FileSystem outFs = createFS(out, true)) {
+      Files.walk(inFs.getPath("/")).filter(path -> patterns.stream().anyMatch(p -> p.test(path))).forEach(path -> {
+        Path dest = outFs.getPath(path.toString());
         try {
           Files.createDirectories(dest.getParent());
           Files.copy(path, dest);
