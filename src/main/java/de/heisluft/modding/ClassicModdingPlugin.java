@@ -14,6 +14,8 @@ import java.util.Arrays;
 
 public class ClassicModdingPlugin implements Plugin<Project> {
 
+  private static final String REPO_URL = "https://heisluft.de/maven/";
+
   @Override
   public void apply(Project project) {
     System.out.println("ClassicModdingPlugin version " + Constants.VERSION + " initialized");
@@ -38,8 +40,17 @@ public class ClassicModdingPlugin implements Plugin<Project> {
     Ext ext = project.getExtensions().create("classicMC", Ext.class);
 
     TaskContainer tasks = project.getTasks();
-    TaskProvider<DownloadTask> downloadMC = tasks.register("downloadMC", DownloadTask.class);
-    downloadMC.configure(task -> task.getMCVersion().set(ext.getVersion()));
+    TaskProvider<MavenJarDownloadTask> downloadDeobfTools = tasks.register("downloadDeobfTools", MavenJarDownloadTask.class, task -> {
+      task.getArtifactLocation().set("de.heisluft.reveng:RevEng");
+      task.getVersion().set("0.0.1");
+      task.getClassifier().set("all");
+      task.getMavenRepoUrl().set(REPO_URL);
+    });
+    TaskProvider<MavenJarDownloadTask> downloadMC = tasks.register("downloadMC", MavenJarDownloadTask.class, task -> {
+      task.getArtifactLocation().set("com.mojang:minecraft");
+      task.getVersion().set(ext.getVersion());
+      task.getMavenRepoUrl().set(REPO_URL);
+    });
     tasks.register("makeAssetJar", Zip2ZipCopyTask.class, task -> {
       task.dependsOn(downloadMC);
       task.getInput().set(downloadMC.get().getOutput());
