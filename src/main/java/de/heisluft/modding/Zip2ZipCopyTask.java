@@ -47,7 +47,7 @@ public abstract class Zip2ZipCopyTask extends DefaultTask {
   }
 
   public Zip2ZipCopyTask() {
-    getOutput().convention(getProject().getLayout().getBuildDirectory().dir(getName()).map(dir -> dir.file("resources.jar")));
+    getOutput().convention(getProject().getLayout().getBuildDirectory().dir(getName()).map(dir -> dir.file("output.jar")));
   }
 
   private Predicate<Path> parsePattern(String pattern) {
