@@ -67,7 +67,10 @@ public class ClassicModdingPlugin implements Plugin<Project> {
       task.classpath(downloadDeobfTools.get().getOutput().get());
       task.setOutputFilename("minecraft.jar");
       task.getMainClass().set("de.heisluft.reveng.ConstructorFixer");
-      task.args(stripLibs.get().getOutput().get().getAsFile().getAbsolutePath(), task.getOutput().get().getAsFile().getAbsolutePath());
+      task.args(
+          stripLibs.get().getOutput().get().getAsFile().getAbsolutePath(),
+          task.getOutput().get().getAsFile().getAbsolutePath()
+      );
     });
     TaskProvider<OutputtingJavaExec> generateMappings = tasks.register("generateMappings", OutputtingJavaExec.class, task -> {
       task.dependsOn(stripLibs, downloadDeobfTools);
