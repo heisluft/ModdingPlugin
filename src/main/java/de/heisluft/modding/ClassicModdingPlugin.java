@@ -9,7 +9,9 @@ import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
 import org.gradle.jvm.toolchain.JvmVendorSpec;
 
+import java.io.File;
 import java.util.Arrays;
+import java.util.Set;
 
 public class ClassicModdingPlugin implements Plugin<Project> {
 
@@ -47,6 +49,10 @@ public class ClassicModdingPlugin implements Plugin<Project> {
       task.getClassifier().set("all");
       task.getMavenRepoUrl().set(REPO_URL);
     });
+    TaskProvider<MavenJarDownloadTask> downloadFernFlower = tasks.register("downloadFernFlower", MavenJarDownloadTask.class, task -> {
+      task.getArtifactLocation().set("com.jetbrains:FernFlower");
+      task.getMavenRepoUrl().set(REPO_URL);
+    });
     TaskProvider<MavenJarDownloadTask> downloadMC = tasks.register("downloadMC", MavenJarDownloadTask.class, task -> {
       task.getArtifactLocation().set("com.mojang:minecraft");
       task.getVersion().set(ext.getVersion());
@@ -72,6 +78,16 @@ public class ClassicModdingPlugin implements Plugin<Project> {
           task.getOutput().get().getAsFile().getAbsolutePath()
       );
     });
+    TaskProvider<OutputtingJavaExec> fixEnumSwitches = tasks.register("fixEnumSwitches", OutputtingJavaExec.class, task -> {
+      task.dependsOn(fixConstructors);
+      task.classpath(downloadDeobfTools.get().getOutput().get());
+      task.setOutputFilename("minecraft.jar");
+      task.getMainClass().set("de.heisluft.reveng.nests.EnumSwitchClassDetector");
+      task.args(
+          fixConstructors.get().getOutput().get().getAsFile().getAbsolutePath(),
+          task.getOutput().get().getAsFile().getAbsolutePath()
+      );
+    });
     TaskProvider<OutputtingJavaExec> generateMappings = tasks.register("generateMappings", OutputtingJavaExec.class, task -> {
       task.dependsOn(stripLibs, downloadDeobfTools);
       task.classpath(downloadDeobfTools.get().getOutput().get());
@@ -84,17 +100,37 @@ public class ClassicModdingPlugin implements Plugin<Project> {
       );
     });
     TaskProvider<OutputtingJavaExec> remapJar = tasks.register("remapJar", OutputtingJavaExec.class, task -> {
-      task.dependsOn(generateMappings, fixConstructors);
+      task.dependsOn(generateMappings, fixEnumSwitches);
       task.classpath(downloadDeobfTools.get().getOutput().get());
       task.setOutputFilename("minecraft.jar");
       task.getMainClass().set("de.heisluft.reveng.Remapper");
       task.args(
           "remap",
-          fixConstructors.get().getOutput().get().getAsFile().getAbsolutePath(),
+          fixEnumSwitches.get().getOutput().get().getAsFile().getAbsolutePath(),
           generateMappings.get().getOutput().getAsFile().get().getAbsolutePath(),
           "-o",
           task.getOutput().get().getAsFile().getAbsolutePath()
       );
+    });
+    TaskProvider<OutputtingJavaExec> decompMC = tasks.register("decompMC", OutputtingJavaExec.class, task -> {
+      task.dependsOn(remapJar, downloadFernFlower);
+      task.setOutputFilename("minecraft.jar");
+      task.classpath(downloadFernFlower.get().getOutput().get());
+      task.getMainClass().set("org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler");
+      task.setMaxHeapSize("4G");
+      task.args(
+          remapJar.get().getOutput().get().getAsFile().getAbsolutePath(),
+          task.getOutput().get().getAsFile().toPath().getParent().toAbsolutePath().toString()
+      );
+    });
+    TaskProvider<Extract> extractSrc = tasks.register("extractSrc", Extract.class, task -> {
+      task.dependsOn(decompMC);
+      task.getInput().set(decompMC.get().getOutput());
+    });
+    tasks.register("copySrc", Copy.class, task -> {
+      task.dependsOn(extractSrc);
+      Set<File> srcDirs = javaExt.getSourceSets().getByName("main").getJava().getSrcDirs();
+      task.from(extractSrc.get().getOutput()).into(srcDirs.iterator().next());
     });
   }
 }
