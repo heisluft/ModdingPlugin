@@ -1,7 +1,9 @@
 package de.heisluft.modding;
 
+import de.heisluft.modding.repo.ResourceRepo;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
+import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.tasks.*;
@@ -35,12 +37,16 @@ public class ClassicModdingPlugin implements Plugin<Project> {
       javaCompile.setTargetCompatibility("1.5");
       javaCompile.setSourceCompatibility("1.5");
     });
-    // Maven Central hosts launchwrappers dependencies
+    // Maven Central hosts launchwrappers and mcs dependencies
     project.getRepositories().mavenCentral();
-    // heisluft.de hosts the latest launchwrapper compiled for java 5
+    // heisluft.de hosts the latest launchwrapper compiled for java 5 as well as jogg
     project.getRepositories().maven(repo -> repo.setUrl("https://heisluft.de/maven/"));
-    // launchwrapper is used to start mc
-    project.getDependencies().add("implementation", "net.minecraft:launchwrapper:1.12");
+    DependencyHandler d = project.getDependencies();
+    d.add("implementation", "net.minecraft:launchwrapper:1.12");
+    d.add("implementation", "org.lwjgl.lwjgl:lwjgl:2.9.3");
+    d.add("implementation", "org.lwjgl.lwjgl:lwjgl_util:2.9.3");
+    d.add("implementation", "de.jarnbjo:j-ogg-mc:1.0.0");
+
     Ext ext = project.getExtensions().create("classicMC", Ext.class);
 
     TaskContainer tasks = project.getTasks();
@@ -132,5 +138,6 @@ public class ClassicModdingPlugin implements Plugin<Project> {
       Set<File> srcDirs = javaExt.getSourceSets().getByName("main").getJava().getSrcDirs();
       task.from(extractSrc.get().getOutput()).into(srcDirs.iterator().next());
     });
+    project.afterEvaluate(ResourceRepo::init);
   }
 }

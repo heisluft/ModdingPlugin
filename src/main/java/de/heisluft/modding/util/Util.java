@@ -1,5 +1,7 @@
 package de.heisluft.modding.util;
 
+import org.gradle.api.Project;
+
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
@@ -7,6 +9,7 @@ import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.Map;
 import java.util.function.Predicate;
@@ -51,5 +54,14 @@ public class Util {
     }
     Pattern result = Pattern.compile(builder.append('$').toString());
     return p -> result.matcher(p.toString()).matches();
+  }
+
+  public static Path getCacheBase(Project project) {
+    File gradleUserHomeDir = project.getGradle().getGradleUserHomeDir();
+    return Paths.get(gradleUserHomeDir.getPath(), "caches", "classic_modding");
+  }
+
+  public static File getCache(Project project, String... tail) {
+    return Paths.get(getCacheBase(project).toString(), tail).toFile();
   }
 }
