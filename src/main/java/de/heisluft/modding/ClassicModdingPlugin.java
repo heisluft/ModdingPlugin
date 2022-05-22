@@ -45,7 +45,7 @@ public class ClassicModdingPlugin implements Plugin<Project> {
     d.add("implementation", "net.minecraft:launchwrapper:1.12");
     d.add("implementation", "org.lwjgl.lwjgl:lwjgl:2.9.3");
     d.add("implementation", "org.lwjgl.lwjgl:lwjgl_util:2.9.3");
-    d.add("implementation", "de.jarnbjo:j-ogg-mc:1.0.0");
+    d.add("implementation", "de.jarnbjo:j-ogg-mc:1.0.1");
 
     Ext ext = project.getExtensions().create("classicMC", Ext.class);
 

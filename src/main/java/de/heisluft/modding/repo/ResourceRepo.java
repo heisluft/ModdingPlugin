@@ -35,7 +35,7 @@ public class ResourceRepo implements ArtifactProvider<ArtifactIdentifier> {
 
   @Override
   public Artifact getArtifact(ArtifactIdentifier info) {
-
+    System.out.println("trying to resolve: " + info);
     return null;
   }
 }
