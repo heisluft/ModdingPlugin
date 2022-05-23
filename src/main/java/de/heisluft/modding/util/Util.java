@@ -1,5 +1,6 @@
 package de.heisluft.modding.util;
 
+import org.apache.groovy.json.internal.IO;
 import org.gradle.api.Project;
 
 import java.io.File;
@@ -62,6 +63,12 @@ public class Util {
   }
 
   public static File getCache(Project project, String... tail) {
-    return Paths.get(getCacheBase(project).toString(), tail).toFile();
+    Path cache = Paths.get(getCacheBase(project).toString(), tail);
+    try {
+      Files.createDirectories(cache);
+    } catch(IOException e) {
+      throw new RuntimeException(e);
+    }
+    return cache.toFile();
   }
 }

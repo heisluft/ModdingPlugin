@@ -39,10 +39,7 @@ public abstract class Zip2ZipCopyTask extends DefaultTask {
     getOutput().convention(getProject().getLayout().getBuildDirectory().dir(getName()).map(dir -> dir.file("output.jar")));
   }
 
-  @TaskAction
-  public void doAction() throws IOException {
-    File out = getOutput().getAsFile().get();
-    File in = getInput().getAsFile().get();
+  public static void doExec(File in, File out, List<String> includePatterns) throws IOException {
     Set<Predicate<Path>> patterns = includePatterns.stream().map(Util::parsePattern).collect(Collectors.toSet());
     try(FileSystem inFs = Util.createFS(in, false); FileSystem outFs = Util.createFS(out, true)) {
       Files.walk(inFs.getPath("/")).filter(path -> patterns.isEmpty() || patterns.stream().anyMatch(p -> p.test(path))).forEach(path -> {
@@ -57,5 +54,12 @@ public abstract class Zip2ZipCopyTask extends DefaultTask {
     } catch(UncheckedIOException e) {
       throw e.getCause();
     }
+  }
+
+  @TaskAction
+  public void doAction() throws IOException {
+    File out = getOutput().getAsFile().get();
+    File in = getInput().getAsFile().get();
+    doExec(in, out, includePatterns);
   }
 }

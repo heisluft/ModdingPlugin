@@ -18,7 +18,7 @@ import java.util.Set;
 
 public class ClassicModdingPlugin implements Plugin<Project> {
 
-  private static final String REPO_URL = "https://heisluft.de/maven/";
+  public static final String REPO_URL = "https://heisluft.de/maven/";
 
   @Override
   public void apply(Project project) {
@@ -47,6 +47,7 @@ public class ClassicModdingPlugin implements Plugin<Project> {
     d.add("implementation", "org.lwjgl.lwjgl:lwjgl:2.9.3");
     d.add("implementation", "org.lwjgl.lwjgl:lwjgl_util:2.9.3");
     d.add("implementation", "de.jarnbjo:j-ogg-mc:1.0.1");
+    d.add("implementation", "de.heisluft.classiclaunch:launch:1.0.0");
 
     Ext ext = project.getExtensions().create("classicMC", Ext.class);
 
@@ -73,11 +74,6 @@ public class ClassicModdingPlugin implements Plugin<Project> {
       task.getArtifactName().set(ext.getVersion());
       task.getExtension().set("zip");
       task.getMavenRepoUrl().set(REPO_URL);
-    });
-    tasks.register("makeAssetJar", Zip2ZipCopyTask.class, task -> {
-      task.dependsOn(downloadMC);
-      task.getInput().set(downloadMC.get().getOutput());
-      task.getIncludedPaths().addAll(Arrays.asList("**.png", "**.gif"));
     });
     TaskProvider<OutputtingJavaExec> fixConstructors = tasks.register("fixConstructors", OutputtingJavaExec.class, task -> {
       task.dependsOn(downloadMC, downloadDeobfTools);
@@ -163,7 +159,7 @@ public class ClassicModdingPlugin implements Plugin<Project> {
     });
     project.afterEvaluate(project1 -> {
       ResourceRepo.init(project1);
-      project.getDependencies().add("implementation", "bigus:dickus:3");
+      project.getDependencies().add("implementation", "com.mojang:minecraft-assets:" + ext.getVersion().get() + "@jar");
     });
   }
 }
