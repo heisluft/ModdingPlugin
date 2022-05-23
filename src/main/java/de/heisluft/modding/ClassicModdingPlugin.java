@@ -4,6 +4,7 @@ import de.heisluft.modding.repo.ResourceRepo;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
+import org.gradle.api.file.DuplicatesStrategy;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.tasks.*;
@@ -50,18 +51,27 @@ public class ClassicModdingPlugin implements Plugin<Project> {
     Ext ext = project.getExtensions().create("classicMC", Ext.class);
 
     TaskContainer tasks = project.getTasks();
-    TaskProvider<MavenJarDownloadTask> downloadDeobfTools = tasks.register("downloadDeobfTools", MavenJarDownloadTask.class, task -> {
-      task.getArtifactLocation().set("de.heisluft.reveng:RevEng");
+    TaskProvider<MavenDownloadTask> downloadDeobfTools = tasks.register("downloadDeobfTools", MavenDownloadTask.class, task -> {
+      task.getGroupName().set("de.heisluft.reveng");
+      task.getArtifactName().set("RevEng");
       task.getClassifier().set("all");
       task.getMavenRepoUrl().set(REPO_URL);
     });
-    TaskProvider<MavenJarDownloadTask> downloadFernFlower = tasks.register("downloadFernFlower", MavenJarDownloadTask.class, task -> {
-      task.getArtifactLocation().set("com.jetbrains:FernFlower");
+    TaskProvider<MavenDownloadTask> downloadFernFlower = tasks.register("downloadFernFlower", MavenDownloadTask.class, task -> {
+      task.getGroupName().set("com.jetbrains");
+      task.getArtifactName().set("FernFlower");
       task.getMavenRepoUrl().set(REPO_URL);
     });
-    TaskProvider<MavenJarDownloadTask> downloadMC = tasks.register("downloadMC", MavenJarDownloadTask.class, task -> {
-      task.getArtifactLocation().set("com.mojang:minecraft");
+    TaskProvider<MavenDownloadTask> downloadMC = tasks.register("downloadMC", MavenDownloadTask.class, task -> {
+      task.getGroupName().set("com.mojang");
+      task.getArtifactName().set("minecraft");
       task.getVersion().set(ext.getVersion());
+      task.getMavenRepoUrl().set(REPO_URL);
+    });
+    TaskProvider<MavenDownloadTask> downloadDeobfData = tasks.register("downloadDeobfData", MavenDownloadTask.class, task -> {
+      task.getGroupName().set("de.heisluft.deobf.data");
+      task.getArtifactName().set(ext.getVersion());
+      task.getExtension().set("zip");
       task.getMavenRepoUrl().set(REPO_URL);
     });
     tasks.register("makeAssetJar", Zip2ZipCopyTask.class, task -> {
@@ -69,18 +79,13 @@ public class ClassicModdingPlugin implements Plugin<Project> {
       task.getInput().set(downloadMC.get().getOutput());
       task.getIncludedPaths().addAll(Arrays.asList("**.png", "**.gif"));
     });
-    TaskProvider<Zip2ZipCopyTask> stripLibs = tasks.register("stripLibraries", Zip2ZipCopyTask.class, task -> {
-      task.dependsOn(downloadMC);
-      task.getInput().set(downloadMC.get().getOutput());
-      task.getIncludedPaths().addAll(Arrays.asList("a/**", "com/**"));
-    });
     TaskProvider<OutputtingJavaExec> fixConstructors = tasks.register("fixConstructors", OutputtingJavaExec.class, task -> {
-      task.dependsOn(stripLibs, downloadDeobfTools);
+      task.dependsOn(downloadMC, downloadDeobfTools);
       task.classpath(downloadDeobfTools.get().getOutput().get());
       task.setOutputFilename("minecraft.jar");
       task.getMainClass().set("de.heisluft.reveng.ConstructorFixer");
       task.args(
-          stripLibs.get().getOutput().get().getAsFile().getAbsolutePath(),
+          downloadMC.get().getOutput().get().getAsFile().getAbsolutePath(),
           task.getOutput().get().getAsFile().getAbsolutePath()
       );
     });
@@ -94,38 +99,48 @@ public class ClassicModdingPlugin implements Plugin<Project> {
           task.getOutput().get().getAsFile().getAbsolutePath()
       );
     });
-    TaskProvider<OutputtingJavaExec> generateMappings = tasks.register("generateMappings", OutputtingJavaExec.class, task -> {
-      task.dependsOn(stripLibs, downloadDeobfTools);
-      task.classpath(downloadDeobfTools.get().getOutput().get());
-      task.setOutputFilename("generated.frg");
-      task.getMainClass().set("de.heisluft.reveng.Remapper");
-      task.args(
-          "map",
-          stripLibs.get().getOutput().get().getAsFile().getAbsolutePath(),
-          task.getOutput().get().getAsFile().getAbsolutePath()
-      );
+    TaskProvider<Extract> extractData = tasks.register("extractData", Extract.class, task -> {
+      task.dependsOn(downloadDeobfData);
+      task.getInput().set(downloadDeobfData.get().getOutput());
+      task.getIncludedPaths().addAll(Arrays.asList("fergie.frg", "at.cfg", "patches/*"));
     });
     TaskProvider<OutputtingJavaExec> remapJar = tasks.register("remapJar", OutputtingJavaExec.class, task -> {
-      task.dependsOn(generateMappings, fixEnumSwitches);
+      task.dependsOn(extractData, fixEnumSwitches);
       task.classpath(downloadDeobfTools.get().getOutput().get());
       task.setOutputFilename("minecraft.jar");
       task.getMainClass().set("de.heisluft.reveng.Remapper");
       task.args(
           "remap",
           fixEnumSwitches.get().getOutput().get().getAsFile().getAbsolutePath(),
-          generateMappings.get().getOutput().getAsFile().get().getAbsolutePath(),
+          new File(extractData.get().getOutput().getAsFile().get(), "fergie.frg").getAbsolutePath(),
           "-o",
           task.getOutput().get().getAsFile().getAbsolutePath()
       );
     });
+    TaskProvider<Zip2ZipCopyTask> stripLibs = tasks.register("stripLibraries", Zip2ZipCopyTask.class, task -> {
+      task.dependsOn(remapJar);
+      task.getInput().set(remapJar.get().getOutput());
+      task.getIncludedPaths().addAll(Arrays.asList("util/**", "com/**"));
+    });
+    TaskProvider<OutputtingJavaExec> applyAts = tasks.register("applyAts", OutputtingJavaExec.class, task -> {
+      task.dependsOn(stripLibs);
+      task.classpath(downloadDeobfTools.get().getOutput().get());
+      task.setOutputFilename("minecraft.jar");
+      task.getMainClass().set("de.heisluft.reveng.at.ATApplicator");
+      task.args(
+          stripLibs.get().getOutput().getAsFile().get().getAbsolutePath(),
+          new File(extractData.get().getOutput().getAsFile().get(), "at.cfg"),
+          task.getOutput().getAsFile().get().getAbsolutePath()
+      );
+    });
     TaskProvider<OutputtingJavaExec> decompMC = tasks.register("decompMC", OutputtingJavaExec.class, task -> {
-      task.dependsOn(remapJar, downloadFernFlower);
+      task.dependsOn(applyAts, downloadFernFlower);
       task.setOutputFilename("minecraft.jar");
       task.classpath(downloadFernFlower.get().getOutput().get());
       task.getMainClass().set("org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler");
       task.setMaxHeapSize("4G");
       task.args(
-          remapJar.get().getOutput().get().getAsFile().getAbsolutePath(),
+          applyAts.get().getOutput().get().getAsFile().getAbsolutePath(),
           task.getOutput().get().getAsFile().toPath().getParent().toAbsolutePath().toString()
       );
     });
@@ -133,11 +148,22 @@ public class ClassicModdingPlugin implements Plugin<Project> {
       task.dependsOn(decompMC);
       task.getInput().set(decompMC.get().getOutput());
     });
-    tasks.register("copySrc", Copy.class, task -> {
+    TaskProvider<Patcher> applyCompilerPatches = tasks.register("applyCompilerPatches", Patcher.class, task -> {
       task.dependsOn(extractSrc);
-      Set<File> srcDirs = javaExt.getSourceSets().getByName("main").getJava().getSrcDirs();
-      task.from(extractSrc.get().getOutput()).into(srcDirs.iterator().next());
+      task.getPatchDir().set(extractData.get().getOutput().dir("patches"));
+      task.getInput().set(extractSrc.get().getOutput());
     });
-    project.afterEvaluate(ResourceRepo::init);
+    tasks.register("copySrc", Copy.class, task -> {
+      task.dependsOn(applyCompilerPatches);
+      Set<File> srcDirs = javaExt.getSourceSets().getByName("main").getJava().getSrcDirs();
+      task.into(srcDirs.iterator().next());
+      task.from(extractSrc.get().getOutput());
+      task.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE);
+      task.from(applyCompilerPatches.get().getOutput()).eachFile(fileCopyDetails -> fileCopyDetails.setPath(fileCopyDetails.getPath().replace('_', '/')));
+    });
+    project.afterEvaluate(project1 -> {
+      ResourceRepo.init(project1);
+      project.getDependencies().add("implementation", "bigus:dickus:3");
+    });
   }
 }
