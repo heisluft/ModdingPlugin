@@ -36,7 +36,7 @@ public abstract class Extract extends DefaultTask {
   }
 
   public Extract() {
-    getOutput().convention(getProject().getLayout().getBuildDirectory().dir(getName()).map(dir -> dir.dir("output")));
+    getOutput().convention(getProject().getLayout().getBuildDirectory().dir(getName()));
   }
 
   @TaskAction
