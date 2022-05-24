@@ -77,10 +77,8 @@ public class ResourceRepo implements ArtifactProvider<ArtifactIdentifier> {
     }
     File dest = new File(cacheRoot, info.getVersion() + ".jar");
     File result = new File(cacheRoot, info.getVersion() + "-assets.jar");
-    System.out.println("target jar: " + result.getAbsolutePath());
     if(result.isFile())
       return StreamableArtifact.ofFile(info, ArtifactType.OTHER, result);
-    System.out.println("trying to create");
     ArtifactIdentifier target = new SimpleArtifactIdentifier(info.getGroup(), "minecraft", info.getVersion(), info.getClassifier(), info.getExtension());
     try {
       MavenDownloadTask.manualDownload(ClassicModdingPlugin.REPO_URL, target, dest);
@@ -88,13 +86,11 @@ public class ResourceRepo implements ArtifactProvider<ArtifactIdentifier> {
       e.printStackTrace();
       return null;
     }
-    System.out.println("still workin'");
     try {
       Zip2ZipCopyTask.doExec(dest, result, Arrays.asList("**.png" ,"**.gif"));
     } catch(IOException e) {
       return null;
     }
-    System.out.println("should be good");
     return StreamableArtifact.ofFile(info, ArtifactType.OTHER, result);
   }
 }
