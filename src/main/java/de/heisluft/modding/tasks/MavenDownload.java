@@ -1,4 +1,4 @@
-package de.heisluft.modding;
+package de.heisluft.modding.tasks;
 
 import net.minecraftforge.artifactural.api.artifact.ArtifactIdentifier;
 import org.gradle.api.DefaultTask;
@@ -23,7 +23,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 
-public abstract class MavenDownloadTask extends DefaultTask {
+public abstract class MavenDownload extends DefaultTask {
 
   @Input
   public abstract Property<String> getGroupName();
@@ -44,7 +44,7 @@ public abstract class MavenDownloadTask extends DefaultTask {
   @Optional
   public abstract Property<String> getClassifier();
 
-  public MavenDownloadTask() {
+  public MavenDownload() {
     getOutput().convention(getProject().getLayout().getBuildDirectory().dir(getName()).map(dir -> dir.file("output.jar")));
     getVersion().convention("latest");
     getExtension().convention("jar");

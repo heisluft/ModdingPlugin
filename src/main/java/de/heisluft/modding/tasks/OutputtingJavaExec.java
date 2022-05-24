@@ -1,4 +1,4 @@
-package de.heisluft.modding;
+package de.heisluft.modding.tasks;
 
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.tasks.JavaExec;

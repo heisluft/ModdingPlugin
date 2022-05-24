@@ -1,8 +1,8 @@
 package de.heisluft.modding.repo;
 
 import de.heisluft.modding.ClassicModdingPlugin;
-import de.heisluft.modding.MavenDownloadTask;
-import de.heisluft.modding.Zip2ZipCopyTask;
+import de.heisluft.modding.tasks.MavenDownload;
+import de.heisluft.modding.tasks.Zip2ZipCopy;
 import de.heisluft.modding.util.Util;
 import net.minecraftforge.artifactural.api.artifact.Artifact;
 import net.minecraftforge.artifactural.api.artifact.ArtifactIdentifier;
@@ -81,13 +81,13 @@ public class ResourceRepo implements ArtifactProvider<ArtifactIdentifier> {
       return StreamableArtifact.ofFile(info, ArtifactType.OTHER, result);
     ArtifactIdentifier target = new SimpleArtifactIdentifier(info.getGroup(), "minecraft", info.getVersion(), info.getClassifier(), info.getExtension());
     try {
-      MavenDownloadTask.manualDownload(ClassicModdingPlugin.REPO_URL, target, dest);
+      MavenDownload.manualDownload(ClassicModdingPlugin.REPO_URL, target, dest);
     } catch(IOException e) {
       e.printStackTrace();
       return null;
     }
     try {
-      Zip2ZipCopyTask.doExec(dest, result, Arrays.asList("**.png" ,"**.gif"));
+      Zip2ZipCopy.doExec(dest, result, Arrays.asList("**.png" ,"**.gif"));
     } catch(IOException e) {
       return null;
     }

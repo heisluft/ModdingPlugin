@@ -1,4 +1,4 @@
-package de.heisluft.modding;
+package de.heisluft.modding.tasks;
 
 import com.github.difflib.DiffUtils;
 import com.github.difflib.UnifiedDiffUtils;

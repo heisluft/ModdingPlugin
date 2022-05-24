@@ -1,9 +1,9 @@
 package de.heisluft.modding;
 
 import de.heisluft.modding.repo.ResourceRepo;
+import de.heisluft.modding.tasks.*;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
-import org.gradle.api.Task;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.file.DuplicatesStrategy;
 import org.gradle.api.plugins.JavaPlugin;
@@ -53,24 +53,24 @@ public class ClassicModdingPlugin implements Plugin<Project> {
     Ext ext = project.getExtensions().create("classicMC", Ext.class);
 
     TaskContainer tasks = project.getTasks();
-    TaskProvider<MavenDownloadTask> downloadDeobfTools = tasks.register("downloadDeobfTools", MavenDownloadTask.class, task -> {
+    TaskProvider<MavenDownload> downloadDeobfTools = tasks.register("downloadDeobfTools", MavenDownload.class, task -> {
       task.getGroupName().set("de.heisluft.reveng");
       task.getArtifactName().set("RevEng");
       task.getClassifier().set("all");
       task.getMavenRepoUrl().set(REPO_URL);
     });
-    TaskProvider<MavenDownloadTask> downloadFernFlower = tasks.register("downloadFernFlower", MavenDownloadTask.class, task -> {
+    TaskProvider<MavenDownload> downloadFernFlower = tasks.register("downloadFernFlower", MavenDownload.class, task -> {
       task.getGroupName().set("com.jetbrains");
       task.getArtifactName().set("FernFlower");
       task.getMavenRepoUrl().set(REPO_URL);
     });
-    TaskProvider<MavenDownloadTask> downloadMC = tasks.register("downloadMC", MavenDownloadTask.class, task -> {
+    TaskProvider<MavenDownload> downloadMC = tasks.register("downloadMC", MavenDownload.class, task -> {
       task.getGroupName().set("com.mojang");
       task.getArtifactName().set("minecraft");
       task.getVersion().set(ext.getVersion());
       task.getMavenRepoUrl().set(REPO_URL);
     });
-    TaskProvider<MavenDownloadTask> downloadDeobfData = tasks.register("downloadDeobfData", MavenDownloadTask.class, task -> {
+    TaskProvider<MavenDownload> downloadDeobfData = tasks.register("downloadDeobfData", MavenDownload.class, task -> {
       task.getGroupName().set("de.heisluft.deobf.data");
       task.getArtifactName().set(ext.getVersion());
       task.getExtension().set("zip");
@@ -114,7 +114,7 @@ public class ClassicModdingPlugin implements Plugin<Project> {
           task.getOutput().get().getAsFile().getAbsolutePath()
       );
     });
-    TaskProvider<Zip2ZipCopyTask> stripLibs = tasks.register("stripLibraries", Zip2ZipCopyTask.class, task -> {
+    TaskProvider<Zip2ZipCopy> stripLibs = tasks.register("stripLibraries", Zip2ZipCopy.class, task -> {
       task.dependsOn(remapJar);
       task.getInput().set(remapJar.get().getOutput());
       task.getIncludedPaths().addAll(Arrays.asList("util/**", "com/**"));

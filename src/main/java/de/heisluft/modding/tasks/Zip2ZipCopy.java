@@ -1,4 +1,4 @@
-package de.heisluft.modding;
+package de.heisluft.modding.tasks;
 
 import de.heisluft.modding.util.Util;
 import org.gradle.api.DefaultTask;
@@ -20,7 +20,7 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-public abstract class Zip2ZipCopyTask extends DefaultTask {
+public abstract class Zip2ZipCopy extends DefaultTask {
 
   private final List<String> includePatterns = new ArrayList<>();
 
@@ -35,7 +35,7 @@ public abstract class Zip2ZipCopyTask extends DefaultTask {
     return includePatterns;
   }
 
-  public Zip2ZipCopyTask() {
+  public Zip2ZipCopy() {
     getOutput().convention(getProject().getLayout().getBuildDirectory().dir(getName()).map(dir -> dir.file("output.jar")));
   }
 
@@ -58,8 +58,6 @@ public abstract class Zip2ZipCopyTask extends DefaultTask {
 
   @TaskAction
   public void doAction() throws IOException {
-    File out = getOutput().getAsFile().get();
-    File in = getInput().getAsFile().get();
-    doExec(in, out, includePatterns);
+    doExec(getInput().getAsFile().get(), getOutput().getAsFile().get(), includePatterns);
   }
 }

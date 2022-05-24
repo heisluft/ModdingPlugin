@@ -1,4 +1,4 @@
-package de.heisluft.modding;
+package de.heisluft.modding.tasks;
 
 import de.heisluft.modding.util.Util;
 import org.gradle.api.DefaultTask;
