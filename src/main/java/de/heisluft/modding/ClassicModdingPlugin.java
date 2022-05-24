@@ -3,6 +3,7 @@ package de.heisluft.modding;
 import de.heisluft.modding.repo.ResourceRepo;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
+import org.gradle.api.Task;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.file.DuplicatesStrategy;
 import org.gradle.api.plugins.JavaPlugin;
@@ -149,13 +150,17 @@ public class ClassicModdingPlugin implements Plugin<Project> {
       task.getPatchDir().set(extractData.get().getOutput().dir("patches"));
       task.getInput().set(extractSrc.get().getOutput());
     });
-    tasks.register("copySrc", Copy.class, task -> {
+    TaskProvider<Copy> copySrc = tasks.register("copySrc", Copy.class, task -> {
       task.dependsOn(applyCompilerPatches);
       Set<File> srcDirs = javaExt.getSourceSets().getByName("main").getJava().getSrcDirs();
       task.into(srcDirs.iterator().next());
-      task.from(extractSrc.get().getOutput());
+      task.from(applyCompilerPatches.get().getOutput());
       task.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE);
-      task.from(applyCompilerPatches.get().getOutput()).eachFile(fileCopyDetails -> fileCopyDetails.setPath(fileCopyDetails.getPath().replace('_', '/')));
+    });
+    tasks.register("genPatches", Differ.class, task -> {
+      task.dependsOn("applyCompilerPatches");
+      task.getBackupSrcDir().set(applyCompilerPatches.get().getOutput());
+      task.getModifiedSrcDir().set(copySrc.get().getDestinationDir());
     });
     project.afterEvaluate(project1 -> {
       ResourceRepo.init(project1);

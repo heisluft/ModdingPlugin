@@ -35,29 +35,44 @@ public abstract class Patcher extends DefaultTask {
   }
 
   @TaskAction
-  public void doStuff() {
-    Map<String, Patch<String>> patches = StreamSupport.stream(getPatchDir().getAsFileTree().spliterator(), false).map(f -> {
-      try {
-        return Files.readAllLines(f.toPath());
-      } catch(IOException e) {
-        throw new UncheckedIOException(e);
-      }
-    }).collect(Collector.of(
-        HashMap::new,
-        (hashMap, strings) -> hashMap.put(extractPatchedPath(strings.get(0)), UnifiedDiffUtils.parseUnifiedDiff(strings)),
-        (hashMap, hashMap2) -> { hashMap.putAll(hashMap2); return hashMap; }
-    ));
-    Path inDirRoot = getInput().getAsFile().get().toPath();
-    Path outDirRoot = getOutput().getAsFile().get().toPath();
-    patches.forEach((s, stringPatch) -> {
-      try {
-        Files.write(outDirRoot.resolve(s.replace('/', '_')), DiffUtils.patch(Files.readAllLines(inDirRoot.resolve(s)), stringPatch));
-      } catch(IOException e) {
-       throw new UncheckedIOException(e);
-     } catch(PatchFailedException e) {
-        throw new RuntimeException(e);
-      }
-    });
+  public void doStuff() throws IOException {
+    try {
+      Map<String, Patch<String>> patches = StreamSupport.stream(
+          getPatchDir().getAsFileTree().spliterator(), false).map(f -> {
+        try {
+          return Files.readAllLines(f.toPath());
+        } catch(IOException e) {
+          throw new UncheckedIOException(e);
+        }
+      }).collect(Collector.of(HashMap::new,
+          (hashMap, strings) -> hashMap.put(extractPatchedPath(strings.get(0)), UnifiedDiffUtils.parseUnifiedDiff(strings)),
+          (hashMap, hashMap2) -> {
+            hashMap.putAll(hashMap2);
+            return hashMap;
+          }));
+      Path inDirRoot = getInput().getAsFile().get().toPath();
+      Path outDirRoot = getOutput().getAsFile().get().toPath();
+      Files.walk(inDirRoot).filter(Files::isRegularFile).forEach(p -> {
+        try {
+          Path outPath = outDirRoot.resolve(inDirRoot.relativize(p));
+          Files.createDirectories(outPath.getParent());
+          Files.copy(p, outPath);
+        } catch(IOException e) {
+          throw new UncheckedIOException(e);
+        }
+      });
+      patches.forEach((s, stringPatch) -> {
+        try {
+          Files.write(outDirRoot.resolve(s), DiffUtils.patch(Files.readAllLines(inDirRoot.resolve(s)), stringPatch));
+        } catch(IOException e) {
+          throw new UncheckedIOException(e);
+        } catch(PatchFailedException e) {
+          throw new RuntimeException(e);
+        }
+      });
+    } catch(UncheckedIOException ex) {
+      throw ex.getCause();
+    }
   }
 
   private static String extractPatchedPath(String line) {
