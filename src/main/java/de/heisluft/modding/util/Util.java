@@ -1,6 +1,5 @@
 package de.heisluft.modding.util;
 
-import org.apache.groovy.json.internal.IO;
 import org.gradle.api.Project;
 
 import java.io.File;

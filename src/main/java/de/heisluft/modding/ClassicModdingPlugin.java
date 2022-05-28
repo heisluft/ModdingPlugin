@@ -164,7 +164,7 @@ public class ClassicModdingPlugin implements Plugin<Project> {
     });
     project.afterEvaluate(project1 -> {
       ResourceRepo.init(project1);
-      project.getDependencies().add("implementation", "com.mojang:minecraft-assets:" + ext.getVersion().get() + "@jar");
+      project.getDependencies().add("implementation", "com.mojang:minecraft-assets:" + ext.getVersion().get());
     });
   }
 }
