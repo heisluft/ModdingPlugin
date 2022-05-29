@@ -3,6 +3,7 @@ package de.heisluft.modding.repo;
 import de.heisluft.modding.ClassicModdingPlugin;
 import de.heisluft.modding.tasks.MavenDownload;
 import de.heisluft.modding.tasks.Zip2ZipCopy;
+import de.heisluft.modding.util.IdentifierUtil;
 import de.heisluft.modding.util.Util;
 import net.minecraftforge.artifactural.api.artifact.Artifact;
 import net.minecraftforge.artifactural.api.artifact.ArtifactIdentifier;
@@ -79,9 +80,8 @@ public class ResourceRepo implements ArtifactProvider<ArtifactIdentifier> {
     File result = new File(cacheRoot, info.getVersion() + "-assets.jar");
     if(result.isFile())
       return StreamableArtifact.ofFile(info, ArtifactType.OTHER, result);
-    ArtifactIdentifier target = new SimpleArtifactIdentifier(info.getGroup(), "minecraft", info.getVersion(), info.getClassifier(), info.getExtension());
     try {
-      MavenDownload.manualDownload(ClassicModdingPlugin.REPO_URL, target, dest);
+      MavenDownload.manualDownload(ClassicModdingPlugin.REPO_URL, IdentifierUtil.withName(info, "minecraft"), dest);
     } catch(IOException e) {
       e.printStackTrace();
       return null;
