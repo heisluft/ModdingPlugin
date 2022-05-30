@@ -1,6 +1,6 @@
 package de.heisluft.modding.util;
 
-import org.gradle.api.Project;
+import org.gradle.api.invocation.Gradle;
 
 import java.io.File;
 import java.io.IOException;
@@ -56,13 +56,13 @@ public class Util {
     return p -> result.matcher(p.toString()).matches();
   }
 
-  public static Path getCacheBase(Project project) {
-    File gradleUserHomeDir = project.getGradle().getGradleUserHomeDir();
+  public static Path getCacheBase(Gradle gradle) {
+    File gradleUserHomeDir = gradle.getGradleUserHomeDir();
     return Paths.get(gradleUserHomeDir.getPath(), "caches", "classic_modding");
   }
 
-  public static File getCache(Project project, String... tail) {
-    Path cache = Paths.get(getCacheBase(project).toString(), tail);
+  public static File getCache(Gradle gradle, String... tail) {
+    Path cache = Paths.get(getCacheBase(gradle).toString(), tail);
     try {
       Files.createDirectories(cache);
     } catch(IOException e) {

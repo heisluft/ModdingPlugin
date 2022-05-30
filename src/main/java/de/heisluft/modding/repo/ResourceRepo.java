@@ -10,12 +10,12 @@ import net.minecraftforge.artifactural.api.artifact.ArtifactIdentifier;
 import net.minecraftforge.artifactural.api.artifact.ArtifactType;
 import net.minecraftforge.artifactural.api.repository.ArtifactProvider;
 import net.minecraftforge.artifactural.api.repository.Repository;
-import net.minecraftforge.artifactural.base.artifact.SimpleArtifactIdentifier;
 import net.minecraftforge.artifactural.base.artifact.StreamableArtifact;
 import net.minecraftforge.artifactural.base.repository.ArtifactProviderBuilder;
 import net.minecraftforge.artifactural.base.repository.SimpleRepository;
 import net.minecraftforge.artifactural.gradle.GradleRepositoryAdapter;
 import org.gradle.api.Project;
+import org.gradle.api.invocation.Gradle;
 
 import java.io.File;
 import java.io.IOException;
@@ -30,7 +30,6 @@ public class ResourceRepo implements ArtifactProvider<ArtifactIdentifier> {
   private final File cacheRoot;
   private final Repository repo;
   private static ResourceRepo instance;
-  private final Project project;
 
   public byte[] genPom(ArtifactIdentifier info) {
     return (
@@ -43,20 +42,19 @@ public class ResourceRepo implements ArtifactProvider<ArtifactIdentifier> {
     ).getBytes(StandardCharsets.UTF_8);
   }
 
-  private static ResourceRepo getInstance(Project project) {
-    if(instance == null) instance = new ResourceRepo(project);
+  private static ResourceRepo getInstance(Gradle gradle) {
+    if(instance == null) instance = new ResourceRepo(gradle);
     return instance;
   }
 
-  private ResourceRepo(Project project) {
-    this.project = project;
+  private ResourceRepo(Gradle project) {
     cacheRoot = Util.getCache(project, "resource_repo");
     repo = SimpleRepository.of(ArtifactProviderBuilder.begin(ArtifactIdentifier.class).provide(this));
 
   }
 
   public static void init(Project project) {
-    ResourceRepo repo = getInstance(project);
+    ResourceRepo repo = getInstance(project.getGradle());
     GradleRepositoryAdapter.add(project.getRepositories(), "DYNAMIC_asset_repo", instance.cacheRoot, repo.repo);
   }
 
