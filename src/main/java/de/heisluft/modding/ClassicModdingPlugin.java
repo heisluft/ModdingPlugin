@@ -9,6 +9,7 @@ import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.file.DuplicatesStrategy;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
+import org.gradle.api.provider.ListProperty;
 import org.gradle.api.tasks.*;
 import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
@@ -19,6 +20,8 @@ import org.gradle.jvm.toolchain.JvmVendorSpec;
 import java.io.File;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
 
 public class ClassicModdingPlugin implements Plugin<Project> {
 
@@ -176,10 +179,32 @@ public class ClassicModdingPlugin implements Plugin<Project> {
       task.getBackupSrcDir().set(applyCompilerPatches.get().getOutput());
       task.getModifiedSrcDir().set(copySrc.get().getDestinationDir());
     });
+    TaskProvider<CPFileDecorator> makeCPFileP = tasks.register("makeCPFile", CPFileDecorator.class);
+    TaskProvider<IdeaRunConfigMaker> genBSLRun = tasks.register("genBSLRun", IdeaRunConfigMaker.class, t -> {
+      t.dependsOn(makeCPFileP);
+      ListProperty<String> jvmArgs = t.getJvmArgs();
+      t.getConfigName().set("runClient");
+      t.getMainClassName().set("cpw.mods.bootstraplauncher.BootstrapLauncher");
+      jvmArgs.add("-DlegacyClassPath.file=" + makeCPFileP.get().getOutput().get().getAsFile().getAbsolutePath());
+      jvmArgs.add("-DignoreList=bootstraplauncher,securejarhandler,asm,minecraft-assets");
+      jvmArgs.add("--add-modules ALL-MODULE-PATH");
+      jvmArgs.add("--add-opens java.base/java.util.jar=cpw.mods.securejarhandler");
+      jvmArgs.add("--add-opens java.base/java.lang.invoke=cpw.mods.securejarhandler");
+      jvmArgs.add("--add-exports java.base/sun.security.util=cpw.mods.securejarhandler");
+      jvmArgs.add("--add-exports jdk.naming.dns/com.sun.jndi.dns=java.naming");
+    });
     project.afterEvaluate(project1 -> {
       ResourceRepo.init(project1);
       String version = project1.getExtensions().getByType(Ext.class).getVersion().get();
       project1.getDependencies().add("mcImplementation", "com.mojang:minecraft-assets:" + version);
+      genBSLRun.configure(task -> {
+        List<String> startModules = Arrays.asList("asm-", "bootstraplauncher-", "securejarhandler-");
+        task.getJvmArgs().add(task.getProject().getConfigurations().getByName("runtimeClasspath").getResolvedConfiguration()
+            .getFiles().stream()
+            .filter(f -> startModules.stream().anyMatch(f.getName()::startsWith))
+            .map(File::getAbsolutePath)
+            .collect(Collectors.joining(File.pathSeparator, "-p ", "")));
+      });
     });
   }
 }
