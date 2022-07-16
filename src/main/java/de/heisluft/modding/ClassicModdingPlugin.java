@@ -58,14 +58,25 @@ public class ClassicModdingPlugin implements Plugin<Project> {
         javaCompile.setSourceCompatibility("1.5");
       }
     });
-    // Maven Central hosts launchwrappers and mcs dependencies
+    // Maven Central hosts log4j, asm, jansi and lwjgl
     project.getRepositories().mavenCentral();
-    // heisluft.de hosts the latest launchwrapper compiled for java 5 as well as jogg
+    // heisluft.de hosts jopt-simple with auto-module-name and JOgg
     project.getRepositories().maven(repo -> repo.setUrl("https://heisluft.de/maven/"));
+    // minecraftforge.net hosts bsl, sjh and modlauncher
+    project.getRepositories().maven(repo -> repo.setUrl("https://maven.minecraftforge.net/"));
     DependencyHandler d = project.getDependencies();
     d.add("mcImplementation", "org.lwjgl.lwjgl:lwjgl:2.9.3");
     d.add("mcImplementation", "org.lwjgl.lwjgl:lwjgl_util:2.9.3");
     d.add("mcImplementation", "de.jarnbjo:j-ogg-mc:1.0.1");
+    // MC should be a runtime dep of main (although not required with the bsl launch)
+    d.add("runtimeClasspath", mcSourceSet.getOutput().getClassesDirs());
+    // TODO: Evaluate whether modlauncher should be the only means to launch mc - debugging without? how?
+    d.add("runtimeClasspath", "org.fusesource.jansi:jansi:2.4.0");
+    d.add("implementation", "cpw.mods:modlauncher:10.0.8");
+    d.add("implementation", "cpw.mods:bootstraplauncher:1.1.2");
+    d.add("implementation", "cpw.mods:securejarhandler:2.1.4");
+    d.add("implementation", "net.sf.jopt-simple:jopt-simple:5.0.5");
+    d.add("implementation", "org.apache.logging.log4j:log4j-core:2.17.2");
 
     Ext ext = project.getExtensions().create("classicMC", Ext.class);
 
@@ -185,8 +196,9 @@ public class ClassicModdingPlugin implements Plugin<Project> {
       ListProperty<String> jvmArgs = t.getJvmArgs();
       t.getConfigName().set("runClient");
       t.getMainClassName().set("cpw.mods.bootstraplauncher.BootstrapLauncher");
+      jvmArgs.add("-Dmccl.mcClasses.dir=" + mcSourceSet.getOutput().getClassesDirs().iterator().next().getAbsolutePath());
       jvmArgs.add("-DlegacyClassPath.file=" + makeCPFileP.get().getOutput().get().getAsFile().getAbsolutePath());
-      jvmArgs.add("-DignoreList=bootstraplauncher,securejarhandler,asm,minecraft-assets");
+      jvmArgs.add("-DignoreList=bootstraplauncher,securejarhandler,asm,minecraft-assets,mc");
       jvmArgs.add("--add-modules ALL-MODULE-PATH");
       jvmArgs.add("--add-opens java.base/java.util.jar=cpw.mods.securejarhandler");
       jvmArgs.add("--add-opens java.base/java.lang.invoke=cpw.mods.securejarhandler");
@@ -204,6 +216,7 @@ public class ClassicModdingPlugin implements Plugin<Project> {
             .filter(f -> startModules.stream().anyMatch(f.getName()::startsWith))
             .map(File::getAbsolutePath)
             .collect(Collectors.joining(File.pathSeparator, "-p ", "")));
+        task.getAppArgs().add("--version=" + version);
       });
     });
   }
