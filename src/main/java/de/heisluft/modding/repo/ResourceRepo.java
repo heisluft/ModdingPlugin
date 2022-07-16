@@ -75,7 +75,7 @@ public class ResourceRepo implements ArtifactProvider<ArtifactIdentifier> {
       return StreamableArtifact.ofFile(info, ArtifactType.OTHER, target);
     }
     File dest = new File(cacheRoot, info.getVersion() + ".jar");
-    File result = new File(cacheRoot, info.getVersion() + "-assets.jar");
+    File result = new File(cacheRoot, "minecraft-assets-" + info.getVersion() + ".jar");
     if(result.isFile())
       return StreamableArtifact.ofFile(info, ArtifactType.OTHER, result);
     try {
