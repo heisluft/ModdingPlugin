@@ -16,7 +16,6 @@ import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
 import org.gradle.jvm.toolchain.JavaToolchainService;
 import org.gradle.jvm.toolchain.JavaToolchainSpec;
-import org.gradle.jvm.toolchain.JvmVendorSpec;
 
 import java.io.File;
 import java.util.Arrays;
@@ -31,7 +30,6 @@ public class ClassicModdingPlugin implements Plugin<Project> {
   private static Action<JavaToolchainSpec> versionOf(int version) {
     return javaToolchainSpec -> {
       javaToolchainSpec.getLanguageVersion().set(JavaLanguageVersion.of(version));
-      javaToolchainSpec.getVendor().set(JvmVendorSpec.ADOPTOPENJDK);
     };
   }
 
@@ -71,7 +69,7 @@ public class ClassicModdingPlugin implements Plugin<Project> {
     d.add("mcImplementation", "org.lwjgl.lwjgl:lwjgl_util:2.9.3");
     d.add("mcImplementation", "de.jarnbjo:j-ogg-mc:1.0.1");
     // TODO: Evaluate whether modlauncher should be the only means to launch mc - debugging without? how?
-    d.add("runtimeClasspath", "org.fusesource.jansi:jansi:2.4.0");
+    d.add("runtimeOnly", "org.fusesource.jansi:jansi:2.4.0");
     d.add("implementation", "cpw.mods:modlauncher:10.0.8");
     d.add("implementation", "cpw.mods:bootstraplauncher:1.1.2");
     d.add("implementation", "cpw.mods:securejarhandler:2.1.4");
