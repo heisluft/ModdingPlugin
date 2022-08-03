@@ -48,7 +48,7 @@ public class ResourceRepo implements ArtifactProvider<ArtifactIdentifier> {
   }
 
   private ResourceRepo(Gradle gradle) {
-    cacheRoot = Util.getCache(gradle, "resource_repo");
+    cacheRoot = Util.getCache(gradle, "resource_repo").toFile();
     repo = SimpleRepository.of(ArtifactProviderBuilder.begin(ArtifactIdentifier.class).provide(this));
 
   }

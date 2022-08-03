@@ -1,5 +1,6 @@
 package de.heisluft.modding;
 
+import de.heisluft.modding.repo.MCRepo;
 import de.heisluft.modding.repo.ResourceRepo;
 import de.heisluft.modding.tasks.*;
 import org.gradle.api.Action;
@@ -36,6 +37,7 @@ public class ClassicModdingPlugin implements Plugin<Project> {
 
   @Override
   public void apply(Project project) {
+    MCRepo.init(project.getGradle(), REPO_URL);
     System.out.println("ClassicModdingPlugin version " + Constants.VERSION + " initialized");
 
     // Java Plugin needs to be applied first as we want to configure it
@@ -68,8 +70,6 @@ public class ClassicModdingPlugin implements Plugin<Project> {
     d.add("mcImplementation", "org.lwjgl.lwjgl:lwjgl:2.9.3");
     d.add("mcImplementation", "org.lwjgl.lwjgl:lwjgl_util:2.9.3");
     d.add("mcImplementation", "de.jarnbjo:j-ogg-mc:1.0.1");
-    // MC should be a runtime dep of main (although not required with the bsl launch)
-    d.add("runtimeClasspath", mcSourceSet.getOutput().getClassesDirs());
     // TODO: Evaluate whether modlauncher should be the only means to launch mc - debugging without? how?
     d.add("runtimeClasspath", "org.fusesource.jansi:jansi:2.4.0");
     d.add("implementation", "cpw.mods:modlauncher:10.0.8");

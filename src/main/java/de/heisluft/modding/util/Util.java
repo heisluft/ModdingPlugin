@@ -4,14 +4,16 @@ import org.gradle.api.invocation.Gradle;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Collections;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
@@ -20,9 +22,28 @@ public class Util {
   private static final Map<String, ?> PROPS = Collections.singletonMap("create", "true");
 
   public static FileSystem createFS(File at, boolean createFile) throws IOException {
-    Path p = at.toPath().toAbsolutePath();
+    Path p = at.toPath();
     if(!Files.isRegularFile(p) && createFile) Files.write(p, new byte[]{80, 75, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0});
-    return FileSystems.newFileSystem(URI.create("jar:file:/" + p.toString().replace('\\', '/')), PROPS);
+    try {
+      return FileSystems.newFileSystem(new URI("jar", p.toAbsolutePath().toUri().toString(), null), PROPS);
+    } catch (URISyntaxException e) {
+      throw new AssertionError("THIS SHOULD NEVER HAPPEN!", e);
+    }
+  }
+
+  /**
+   *
+   * @param urlString the url to connect to
+   * @param buf the buffer to read into
+   * @return the number of remaining bytes within the stream, or -1 if the stream had less data available than the buffers
+   *         capacity
+   * @throws IOException if the url could not be connected to.
+   */
+  public static int readSized(String urlString, byte[] buf) throws IOException {
+    try(InputStream is = new URL(urlString).openStream()) {
+      if(buf.length != is.read(buf)) return -1;
+      return is.available();
+    }
   }
 
   public static Predicate<Path> parsePattern(String pattern) {
@@ -61,13 +82,17 @@ public class Util {
     return Paths.get(gradleUserHomeDir.getPath(), "caches", "classic_modding");
   }
 
-  public static File getCache(Gradle gradle, String... tail) {
+  public static Path getCache(Gradle gradle, String... tail) {
     Path cache = Paths.get(getCacheBase(gradle).toString(), tail);
-    try {
-      Files.createDirectories(cache);
-    } catch(IOException e) {
-      throw new RuntimeException(e);
+    if(!Files.isDirectory(cache)) {
+      if(Files.exists(cache)) throw new RuntimeException("Cache directory could not be created, " +
+          "a regular file with the same name exists at '" + cache + "'");
+      try {
+        Files.createDirectories(cache);
+      } catch (IOException e) {
+        throw new RuntimeException("Cache directory at '" + cache + "' could not be created!", e);
+      }
     }
-    return cache.toFile();
+    return cache;
   }
 }
