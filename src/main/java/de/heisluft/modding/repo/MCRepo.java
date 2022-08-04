@@ -1,24 +1,26 @@
 package de.heisluft.modding.repo;
 
+import de.heisluft.modding.util.MavenMetaUtil;
 import de.heisluft.modding.util.Util;
-import net.minecraftforge.artifactural.api.artifact.ArtifactIdentifier;
+import org.apache.log4j.Logger;
 import org.gradle.api.invocation.Gradle;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.UncheckedIOException;
+import java.io.*;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Arrays;
 
 public class MCRepo {
+
+  private static final char[] hexChars = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
 
   private static final MessageDigest SHA_512;
   private static MCRepo instance;
   private final String repoURL;
   private final Path cacheDir;
+  private static final Logger LOGGER = Logger.getLogger("MCRepo");
 
   static {
     try {
@@ -46,28 +48,66 @@ public class MCRepo {
     return instance;
   }
 
-  public File resolve(ArtifactIdentifier identifier) throws IOException {
-    String group = identifier.getGroup();
-    if(!"com.mojang".equals(group)) throw new IllegalArgumentException("Repo resolves only mojangs jars");
-    String name = identifier.getName();
+  public Path resolve(String name, String version) throws IOException {
     if(!"minecraft".equals(name) && !"minecraft-server".equals(name))
       throw new IllegalArgumentException("Repo only resolves minecraft jars");
-    String version = identifier.getVersion();
+    boolean repoReachable, versionExists;
+    try {
+      versionExists = MavenMetaUtil.versionExists(repoURL, "com.mojang" , name, version);
+      repoReachable = true;
+    } catch (IOException e) {
+      versionExists = false;
+      repoReachable = false;
+      LOGGER.warn("Could not fetch versions online. Disabling checksum checking and download of missing versions");
+      e.printStackTrace();
+    }
+
     String fName = name + "-" + version + ".jar";
     Path targetFile = cacheDir.resolve(fName);
-    String targetFileURL = repoURL + group.replace('.', '/') + "/" + name + "/"+ version + "/" + fName;
-    byte[] expHash = new byte[128];
-    Util.readSized(targetFileURL + ".sha512", expHash);
-    System.out.println(new String(expHash));
+    boolean fileExistsLocally = Files.isRegularFile(targetFile);
+
+    if(!repoReachable) {
+      if (!fileExistsLocally) throw new FileNotFoundException(targetFile.toString());
+      else return targetFile;
+    }
+
+    if(!versionExists && fileExistsLocally) {
+      LOGGER.warn("version " + version + " does not exist in repo. It cannot be verified");
+      return targetFile;
+    }
+
+    String targetFileURL = repoURL + "com/mojang/" + name + "/"+ version + "/" + fName;
+    String expHash;
+     {
+      byte[] hashBuf = new byte[128];
+      Util.readSized(targetFileURL + ".sha512", hashBuf);
+      expHash = new String(hashBuf);
+    }
     if(Files.isRegularFile(targetFile)) {
-      byte[] compHash = SHA_512.digest(Files.readAllBytes(targetFile));
-      System.out.println(compHash.length);
-      System.out.println(expHash.length);
-      if(!Arrays.equals(compHash, expHash)){
-        System.out.println("warning: checksum mismatch for file " + targetFile.toAbsolutePath());
-        System.out.println("expected: " + new String(expHash) + ", computed: " + new String(expHash));
+      String compHash = bytesToHex(SHA_512.digest(Files.readAllBytes(targetFile)));
+      if(!compHash.equals(expHash)) {
+        LOGGER.warn("warning: checksum mismatch for file " + targetFile.toAbsolutePath() + ", expected: " + expHash + ", computed: " + compHash);
+      }
+      return targetFile;
+    }
+    try(InputStream is = new URL(targetFileURL).openStream(); OutputStream os = Files.newOutputStream(targetFile)) {
+      byte[] buf = new byte[8192];
+      int read;
+      while ((read = is.read(buf)) != -1) {
+        SHA_512.update(buf, 0, read);
+        os.write(buf, 0, read);
       }
     }
-    return targetFile.toFile();
+    String compHash = bytesToHex(SHA_512.digest());
+    if(!compHash.equals(expHash)) {
+      LOGGER.warn("warning: checksum mismatch for file " + targetFile.toAbsolutePath() + ", expected: " + expHash + ", computed: " + compHash);
+    }
+    return targetFile;
+  }
+
+  private static String bytesToHex(byte[] bytes) {
+    StringBuilder builder = new StringBuilder(bytes.length * 2);
+    for (byte b : bytes) builder.append(hexChars[(((int) b) & 0xff) >>> 4]).append(hexChars[b & 0xf]);
+    return builder.toString();
   }
 }

@@ -1,5 +1,6 @@
 package de.heisluft.modding.tasks;
 
+import de.heisluft.modding.util.MavenMetaUtil;
 import net.minecraftforge.artifactural.api.artifact.ArtifactIdentifier;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.file.RegularFileProperty;
@@ -75,20 +76,7 @@ public abstract class MavenDownload extends DefaultTask {
       NodeList versionsQuery = document.getElementsByTagName("versions");
       if(versionsQuery.getLength() == 0) System.err.println("maven-metadata.xml does not list any versions. This is an error on the repo side! Report to maintainers of " + repoUrl);
       else {
-        Element versionsElement = (Element) versionsQuery.item(0);
-        NodeList versionElements = versionsElement.getChildNodes();
-        boolean found = false;
-        for (int i = 0; i < versionElements.getLength(); i++) {
-          Node node = versionElements.item(i);
-          if(!(node instanceof Element)) continue;
-          Element element = (Element) node;
-          if(!element.getTagName().equals("version")) continue; // We will not nag about it rn, it is not our job to validate such stuff
-          if(element.getTextContent().equals(version)) {
-            found = true;
-            break;
-          }
-        }
-        if(!found) throw new FileNotFoundException("Found no data for version '" + version + "' of artifact '" + name + "' in maven repo at " + repoUrl);
+        if(!MavenMetaUtil.getVersions(document).contains(version)) throw new FileNotFoundException("Found no data for version '" + version + "' of artifact '" + name + "' in maven repo at " + repoUrl);
       }
     } catch(SAXException | ParserConfigurationException ex) {
       throw new RuntimeException(ex);

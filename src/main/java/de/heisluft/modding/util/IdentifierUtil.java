@@ -5,10 +5,6 @@ import net.minecraftforge.artifactural.base.artifact.SimpleArtifactIdentifier;
 
 public class IdentifierUtil {
 
-  public static ArtifactIdentifier withName(ArtifactIdentifier source, String name) {
-    return new SimpleArtifactIdentifier(source.getGroup(), name, source.getVersion(), source.getClassifier(), source.getExtension());
-  }
-
   public static ArtifactIdentifier parseIdentifier(String artifactIdentifier) {
     //Dont ever resize this, we want to be fast and ram is not a concern for strings crafted in good faith
     StringBuilder groupBuilder = new StringBuilder(artifactIdentifier.length());

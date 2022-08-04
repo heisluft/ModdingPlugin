@@ -18,6 +18,8 @@ import org.gradle.jvm.toolchain.JavaToolchainService;
 import org.gradle.jvm.toolchain.JavaToolchainSpec;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -90,12 +92,6 @@ public class ClassicModdingPlugin implements Plugin<Project> {
       task.getArtifactName().set("FernFlower");
       task.getMavenRepoUrl().set(REPO_URL);
     });
-    TaskProvider<MavenDownload> downloadMC = tasks.register("downloadMC", MavenDownload.class, task -> {
-      task.getGroupName().set("com.mojang");
-      task.getArtifactName().set("minecraft");
-      task.getVersion().set(ext.getVersion());
-      task.getMavenRepoUrl().set(REPO_URL);
-    });
     TaskProvider<MavenDownload> downloadDeobfData = tasks.register("downloadDeobfData", MavenDownload.class, task -> {
       task.getGroupName().set("de.heisluft.deobf.data");
       task.getArtifactName().set(ext.getVersion());
@@ -103,14 +99,10 @@ public class ClassicModdingPlugin implements Plugin<Project> {
       task.getMavenRepoUrl().set(REPO_URL);
     });
     TaskProvider<OutputtingJavaExec> fixInners = tasks.register("fixInners", OutputtingJavaExec.class, task -> {
-      task.dependsOn(downloadMC, downloadDeobfTools);
+      task.dependsOn(downloadDeobfTools);
       task.classpath(downloadDeobfTools.get().getOutput().get());
       task.setOutputFilename("minecraft.jar");
       task.getMainClass().set("de.heisluft.reveng.nests.InnerClassDetector");
-      task.args(
-          downloadMC.get().getOutput().get().getAsFile().getAbsolutePath(),
-          task.getOutput().get().getAsFile().getAbsolutePath()
-      );
     });
     TaskProvider<OutputtingJavaExec> fixConstructors = tasks.register("fixConstructors", OutputtingJavaExec.class, task -> {
       task.dependsOn(fixInners);
@@ -205,8 +197,19 @@ public class ClassicModdingPlugin implements Plugin<Project> {
     });
     project.afterEvaluate(project1 -> {
       ResourceRepo.init(project1);
+
       String version = project1.getExtensions().getByType(Ext.class).getVersion().get();
+
       project1.getDependencies().add("mcImplementation", "com.mojang:minecraft-assets:" + version);
+
+      fixInners.configure(task -> {
+        try {
+          task.args(MCRepo.getInstance().resolve("minecraft", version), task.getOutput().get().getAsFile().getAbsolutePath());
+        } catch (IOException e) {
+          throw new UncheckedIOException(e);
+        }
+      });
+
       genBSLRun.configure(task -> {
         List<String> startModules = Arrays.asList("asm-", "bootstraplauncher-", "securejarhandler-");
         task.getJvmArgs().add(task.getProject().getConfigurations().getByName("runtimeClasspath").getResolvedConfiguration()
