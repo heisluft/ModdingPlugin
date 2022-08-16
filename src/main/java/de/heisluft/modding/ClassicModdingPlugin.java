@@ -79,6 +79,8 @@ public class ClassicModdingPlugin implements Plugin<Project> {
     Ext ext = project.getExtensions().create("classicMC", Ext.class);
 
     TaskContainer tasks = project.getTasks();
+    tasks.getByName("classes").dependsOn(tasks.getByName(mcSourceSet.getClassesTaskName()));
+
     TaskProvider<MavenDownload> downloadDeobfTools = tasks.register("downloadDeobfTools", MavenDownload.class, task -> {
       task.getGroupName().set("de.heisluft.reveng");
       task.getArtifactName().set("RevEng");
