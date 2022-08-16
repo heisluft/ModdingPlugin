@@ -30,9 +30,7 @@ public class ClassicModdingPlugin implements Plugin<Project> {
   public static final String REPO_URL = "https://heisluft.de/maven/";
 
   private static Action<JavaToolchainSpec> versionOf(int version) {
-    return javaToolchainSpec -> {
-      javaToolchainSpec.getLanguageVersion().set(JavaLanguageVersion.of(version));
-    };
+    return javaToolchainSpec -> javaToolchainSpec.getLanguageVersion().set(JavaLanguageVersion.of(version));
   }
 
   @Override
@@ -76,7 +74,7 @@ public class ClassicModdingPlugin implements Plugin<Project> {
     d.add("implementation", "cpw.mods:bootstraplauncher:1.1.2");
     d.add("implementation", "cpw.mods:securejarhandler:2.1.4");
     d.add("implementation", "net.sf.jopt-simple:jopt-simple:5.0.5");
-    d.add("implementation", "org.apache.logging.log4j:log4j-core:2.17.2");
+    d.add("implementation", "org.apache.logging.log4j:log4j-core:2.18.0");
 
     Ext ext = project.getExtensions().create("classicMC", Ext.class);
 
@@ -186,6 +184,8 @@ public class ClassicModdingPlugin implements Plugin<Project> {
       ListProperty<String> jvmArgs = t.getJvmArgs();
       t.getConfigName().set("runClient");
       t.getMainClassName().set("cpw.mods.bootstraplauncher.BootstrapLauncher");
+      t.getWorkDir().set("$PROJECT_DIR$/run");
+      jvmArgs.add("-Dlog4j.skipJansi=false");
       jvmArgs.add("-Dmccl.mcClasses.dir=" + mcSourceSet.getOutput().getClassesDirs().iterator().next().getAbsolutePath());
       jvmArgs.add("-DlegacyClassPath.file=" + makeCPFileP.get().getOutput().get().getAsFile().getAbsolutePath());
       jvmArgs.add("-DignoreList=bootstraplauncher,securejarhandler,asm,minecraft-assets,mc");

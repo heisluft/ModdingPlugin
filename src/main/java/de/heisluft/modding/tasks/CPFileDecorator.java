@@ -28,9 +28,7 @@ public abstract class CPFileDecorator extends DefaultTask {
   public void generate() throws IOException {
     Set<File> effectivePaths = new HashSet<>(getPaths().get());
 
-    getProject().getConfigurations().getByName("runtimeClasspath").getResolvedConfiguration().getFiles().stream()
-        .filter(f -> !f.getName().contains("-natives-"))
-        .forEach(effectivePaths::add);
+    effectivePaths.addAll(getProject().getConfigurations().getByName("runtimeClasspath").getResolvedConfiguration().getFiles());
 
     Files.write(getOutput().get().getAsFile().toPath(), effectivePaths.stream().map(File::getAbsolutePath).collect(Collectors.toList()));
   }
