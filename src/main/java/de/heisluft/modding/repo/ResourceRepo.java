@@ -57,7 +57,7 @@ public class ResourceRepo implements ArtifactProvider<ArtifactIdentifier> {
     File result = new File(cacheRoot, "minecraft-assets-" + info.getVersion() + ".jar");
     if(result.isFile()) return StreamableArtifact.ofFile(info, ArtifactType.OTHER, result);
     try {
-      Zip2ZipCopy.doExec(MCRepo.getInstance().resolve("minecraft", info.getVersion()).toFile(), result, Arrays.asList("**.png" ,"**.gif"));
+      Zip2ZipCopy.doExec(MCRepo.getInstance().resolve("minecraft", info.getVersion()).toFile(), result, Arrays.asList("**.png", "**.gif", "**.md3", "**.MD3"));
     } catch(IOException e) {
       return null;
     }
