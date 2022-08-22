@@ -46,7 +46,7 @@ public class DeobfDataDevPlugin extends BasePlugin {
             task.dependsOn(gATT);
             task.classpath(deobfToolsJarFile);
             task.setOutputFilename("minecraft.jar");
-            task.getMainClass().set("de.heisluft.reveng.at.AtApplicator");
+            task.getMainClass().set("de.heisluft.reveng.at.ATApplicator");
             task.args(
                     fixConstructors.getOutput().get().getAsFile().getAbsolutePath(),
                     inFile.getAbsolutePath(),
