@@ -56,7 +56,8 @@ public abstract class MavenDownload extends DefaultTask {
 
   public static void manualDownload(String repoUrl, ArtifactIdentifier id, File output) throws IOException {
     String c = id.getClassifier() == null ? "" : "-" + id.getClassifier();
-    doExec(repoUrl, id.getGroup(), id.getName(), id.getVersion(), c, id.getExtension(), output);
+    String ext = id.getExtension();
+    doExec(repoUrl, id.getGroup(), id.getName(), id.getVersion(), c, ext == null ? "jar" : ext, output);
   }
 
   private static void doExec(String repoUrl, String group, String name, String versionRaw, String classifier, String extension, File outputFile) throws IOException {
