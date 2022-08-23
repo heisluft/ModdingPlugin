@@ -19,8 +19,6 @@ public class JarModDevPlugin extends BasePlugin {
     TaskContainer tasks = project.getTasks();
 
     tasks.getByName("classes").dependsOn(tasks.getByName(mcSourceSet.getClassesTaskName()));
-    // for task dependency management
-    OutputtingJavaExec fixCtors = tasks.withType(OutputtingJavaExec.class).getByName("fixConstructors");
 
     TaskProvider<MavenDownload> downloadDeobfData = tasks.register("downloadDeobfData", MavenDownload.class, task -> {
       task.getGroupName().set("de.heisluft.deobf.data");
@@ -34,13 +32,13 @@ public class JarModDevPlugin extends BasePlugin {
       task.getIncludedPaths().addAll(Arrays.asList("fergie.frg", "at.cfg", "patches/*"));
     });
     TaskProvider<OutputtingJavaExec> remapJar = tasks.register("remapJar", OutputtingJavaExec.class, task -> {
-      task.dependsOn(extractData, fixCtors);
+      task.dependsOn(extractData);
       task.classpath(deobfToolsJarFile);
       task.setOutputFilename("minecraft.jar");
       task.getMainClass().set("de.heisluft.reveng.Remapper");
       task.args(
           "remap",
-          fixCtors.getOutput().get().getAsFile().getAbsolutePath(),
+          ctorFixedMC,
           new File(extractData.get().getOutput().getAsFile().get(), "fergie.frg").getAbsolutePath(),
           "-o",
           task.getOutput().get().getAsFile().getAbsolutePath()

@@ -35,7 +35,7 @@ public class Util {
    *
    * @param urlString the url to connect to
    * @param buf the buffer to read into
-   * @return the number of remaining bytes within the stream, or -1 if the stream had less data available than the buffers
+   * @return the number of remaining bytes within the stream, or -1 if the stream had fewer data available than the buffers
    *         capacity
    * @throws IOException if the url could not be connected to.
    */

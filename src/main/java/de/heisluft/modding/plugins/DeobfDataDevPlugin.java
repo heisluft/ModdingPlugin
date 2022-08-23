@@ -4,7 +4,6 @@ import de.heisluft.modding.tasks.Extract;
 import de.heisluft.modding.tasks.OutputtingJavaExec;
 import org.gradle.api.Project;
 import org.gradle.api.file.DuplicatesStrategy;
-import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.tasks.Copy;
 import org.gradle.api.tasks.TaskContainer;
 import org.gradle.api.tasks.TaskProvider;
@@ -23,19 +22,15 @@ public class DeobfDataDevPlugin extends BasePlugin {
 
         tasks.getByName("classes").dependsOn(tasks.getByName(mcSourceSet.getClassesTaskName()));
 
-        // for task dependency management
-        OutputtingJavaExec fixConstructors = tasks.withType(OutputtingJavaExec.class).getByName("fixConstructors");
-
         File deobfWorkspaceDir = project.file("deobf-workspace");
         deobfWorkspaceDir.mkdirs();
 
         TaskProvider<OutputtingJavaExec> gATT = tasks.register("genATsTemp", OutputtingJavaExec.class, task -> {
-            task.dependsOn(fixConstructors);
             task.classpath(deobfToolsJarFile);
             task.setOutputFilename("at.cfg");
             task.getMainClass().set("de.heisluft.reveng.ATGenerator");
             task.args(
-                    fixConstructors.getOutput().get().getAsFile().getAbsolutePath(),
+                    ctorFixedMC,
                     task.getOutput().get().getAsFile().getAbsolutePath()
             );
         });
@@ -48,20 +43,19 @@ public class DeobfDataDevPlugin extends BasePlugin {
             task.setOutputFilename("minecraft.jar");
             task.getMainClass().set("de.heisluft.reveng.at.ATApplicator");
             task.args(
-                    fixConstructors.getOutput().get().getAsFile().getAbsolutePath(),
+                    ctorFixedMC,
                     inFile.getAbsolutePath(),
                     task.getOutput().get().getAsFile().getAbsolutePath()
             );
         });
 
         TaskProvider<OutputtingJavaExec> gMT = tasks.register("genMappingsTemp", OutputtingJavaExec.class, task -> {
-            task.dependsOn(fixConstructors);
             task.classpath(deobfToolsJarFile);
             task.setOutputFilename("mappings-generated.frg");
             task.getMainClass().set("de.heisluft.reveng.Remapper");
             task.args(
                     "map",
-                    fixConstructors.getOutput().get().getAsFile().getAbsolutePath(),
+                    ctorFixedMC,
                     task.getOutput().get().getAsFile().getAbsolutePath()
             );
             task.doLast("copyToMainDir", t -> {
@@ -84,10 +78,9 @@ public class DeobfDataDevPlugin extends BasePlugin {
             task.getMainClass().set("de.heisluft.reveng.Remapper");
 
             task.doFirst(t -> {
-                RegularFileProperty inFile = gATT.get().getOutput().get().getAsFile().exists() ? aATT.get().getOutput() : fixConstructors.getOutput();
                 task.args(
                         "remap",
-                        inFile.get().getAsFile().getAbsolutePath(),
+                        gATT.get().getOutput().get().getAsFile().exists() ? aATT.get().getOutput() : ctorFixedMC,
                         new File(deobfWorkspaceDir, "fergie.frg").getAbsolutePath(),
                         "-o",
                         task.getOutput().get().getAsFile().getAbsolutePath()

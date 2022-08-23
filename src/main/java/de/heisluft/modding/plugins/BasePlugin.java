@@ -13,20 +13,27 @@ import org.gradle.api.Action;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
+import org.gradle.api.plugins.ExtensionContainer;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.provider.ListProperty;
+import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.TaskContainer;
 import org.gradle.api.tasks.TaskProvider;
 import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
+import org.gradle.jvm.toolchain.JavaLauncher;
 import org.gradle.jvm.toolchain.JavaToolchainService;
 import org.gradle.jvm.toolchain.JavaToolchainSpec;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -60,6 +67,8 @@ public abstract class BasePlugin implements Plugin<Project> {
      * The location of the FernFlower jar
      */
     protected File fernFlowerJarFile;
+
+    protected Path ctorFixedMC;
 
     /**
      * @inheritDoc
@@ -116,25 +125,9 @@ public abstract class BasePlugin implements Plugin<Project> {
         // register the mcVersion extension
         project.getExtensions().create("classicMC", Ext.class);
 
-        // TODO: Run fix* tasks automatically, try to merge as many tasks from subprojects into base plugins
+        // TODO: try to merge as many tasks from subprojects into base plugins
         // setup shared tasks
         TaskContainer tasks = project.getTasks();
-        TaskProvider<OutputtingJavaExec> fixInners = tasks.register("fixInners", OutputtingJavaExec.class, task -> {
-            task.classpath(deobfToolsJarFile);
-            task.setOutputFilename("minecraft.jar");
-            task.getMainClass().set("de.heisluft.reveng.nests.InnerClassDetector");
-        });
-        tasks.register("fixConstructors", OutputtingJavaExec.class, task -> {
-            task.dependsOn(fixInners);
-            task.classpath(deobfToolsJarFile);
-            task.setOutputFilename("minecraft.jar");
-            task.getMainClass().set("de.heisluft.reveng.ConstructorFixer");
-            task.args(
-                    fixInners.get().getOutput().get().getAsFile().getAbsolutePath(),
-                    task.getOutput().get().getAsFile().getAbsolutePath()
-            );
-        });
-
         TaskProvider<CPFileDecorator> makeCPFileP = tasks.register("makeCPFile", CPFileDecorator.class);
         TaskProvider<IdeaRunConfigMaker> genBSLRun = tasks.register("genBSLRun", IdeaRunConfigMaker.class, t -> {
             t.dependsOn(makeCPFileP);
@@ -157,16 +150,35 @@ public abstract class BasePlugin implements Plugin<Project> {
             // TODO: find out why Resource repo cannot be initialized pre-config
             ResourceRepo.init(project1);
 
-            String version = project1.getExtensions().getByType(Ext.class).getVersion().get();
+            ExtensionContainer ext = project1.getExtensions();
+            String version = ext.getByType(Ext.class).getVersion().get();
+            Provider<JavaLauncher> jCMD = ext.getByType(JavaToolchainService.class).launcherFor(ext.getByType(JavaPluginExtension.class).getToolchain());
+
+            System.out.println("Version dependent setup tasks running: ");
+            System.out.println("  Fetch MC jar:");
+            Path mcJarPath;
+            Path restoreMetaBase = project1.getBuildDir().toPath().resolve("restoreMeta");
+            try {
+                mcJarPath = MCRepo.getInstance().resolve("minecraft", version);
+                Files.createDirectories(restoreMetaBase);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+            System.out.println("    DONE\n  Resurrect Metadata:");
+            Path temp = restoreMetaBase.resolve("minecraft-inners-restored.jar");
+            ctorFixedMC = restoreMetaBase.resolve("minecraft-ctor-fix.jar").toAbsolutePath();
+            if(Files.notExists(temp) || Files.notExists(ctorFixedMC)) System.out.println();
+            if(Files.notExists(temp)) {
+                launchProcess(jCMD, deobfToolsJarFile.getAbsolutePath(), "de.heisluft.reveng.nests.InnerClassDetector", mcJarPath, temp);
+                System.out.println();
+            }
+            if(Files.notExists(ctorFixedMC)) {
+                launchProcess(jCMD, deobfToolsJarFile.getAbsolutePath(), "de.heisluft.reveng.ConstructorFixer", temp, ctorFixedMC);
+                System.out.println();
+            }
+            System.out.println("    DONE");
             project1.getDependencies()
                     .add("mcImplementation", "com.mojang:minecraft-assets:" + version);
-            fixInners.configure(task -> {
-                try {
-                    task.args(MCRepo.getInstance().resolve("minecraft", version), task.getOutput().get().getAsFile().getAbsolutePath());
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
             genBSLRun.configure(task -> {
                 List<String> startModules = Arrays.asList("asm-", "bootstraplauncher-", "securejarhandler-");
                 task.getJvmArgs().add(task.getProject().getConfigurations().getByName("runtimeClasspath").getResolvedConfiguration()
@@ -193,7 +205,7 @@ public abstract class BasePlugin implements Plugin<Project> {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-        System.out.println("  DONE \n  downloadFernFlower:");
+        System.out.println("    DONE \n  downloadFernFlower:");
         File ffDir = new File(buildDir, "downloadFernFlower");
         ffDir.mkdirs();
         try {
@@ -205,6 +217,31 @@ public abstract class BasePlugin implements Plugin<Project> {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-        System.out.println("  DONE\nVersion independent setup tasks COMPLETE");
+        System.out.println("    DONE\nVersion independent setup tasks COMPLETE");
+    }
+
+    private void launchProcess(Provider<JavaLauncher> jExec, String cp, String main, Object... args) {
+        try {
+            List<String> cmd = new ArrayList<>(args.length + 4);
+            cmd.add(jExec.get().getExecutablePath().getAsFile().getAbsolutePath());
+            cmd.add("-cp");
+            cmd.add(cp);
+            cmd.add(main);
+            for (Object arg : args) cmd.add(arg.toString());
+            Process p = new ProcessBuilder(cmd).start();
+            InputStream is = p.getInputStream();
+            InputStream es = p.getErrorStream();
+            byte[] buf = new byte[512];
+            while (p.isAlive()) {
+                int read = is.read(buf);
+                if(read > 0) System.out.write(buf, 0, read);
+                read = es.read(buf);
+                if(read > 0) System.err.write(buf, 0, read);
+            }
+            int eV = p.waitFor();
+            if(eV != 0) throw new RuntimeException("Command '" + String.join(" ", cmd) + "' finished with nonzero exit value " + eV);
+        } catch (InterruptedException | IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 }
