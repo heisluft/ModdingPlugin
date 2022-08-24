@@ -4,10 +4,7 @@ import de.heisluft.modding.Constants;
 import de.heisluft.modding.Ext;
 import de.heisluft.modding.repo.MCRepo;
 import de.heisluft.modding.repo.ResourceRepo;
-import de.heisluft.modding.tasks.CPFileDecorator;
-import de.heisluft.modding.tasks.IdeaRunConfigMaker;
-import de.heisluft.modding.tasks.MavenDownload;
-import de.heisluft.modding.tasks.OutputtingJavaExec;
+import de.heisluft.modding.tasks.*;
 import net.minecraftforge.artifactural.base.artifact.SimpleArtifactIdentifier;
 import org.gradle.api.Action;
 import org.gradle.api.Plugin;
@@ -50,7 +47,7 @@ public abstract class BasePlugin implements Plugin<Project> {
      * @param version the java version to config
      * @return the computed action
      */
-    protected final Action<JavaToolchainSpec> versionOf(int version) {
+    private Action<JavaToolchainSpec> versionOf(int version) {
         return javaToolchainSpec -> javaToolchainSpec.getLanguageVersion().set(JavaLanguageVersion.of(version));
     }
 
@@ -63,10 +60,6 @@ public abstract class BasePlugin implements Plugin<Project> {
      * The location of the deobf tools jar
      */
     protected File deobfToolsJarFile;
-    /**
-     * The location of the FernFlower jar
-     */
-    protected File fernFlowerJarFile;
 
     protected Path ctorFixedMC;
 
@@ -78,6 +71,39 @@ public abstract class BasePlugin implements Plugin<Project> {
     @Override
     public void apply(Project project) {
         System.out.println("Plugin version: " + Constants.VERSION);
+
+        File buildDir = project.getBuildDir();
+        //Need to init this early, some tasks seem to be eagerly evaluated. TODO: Find out why or ditch task structure altogether.
+        ctorFixedMC = buildDir.toPath().resolve("restoreMeta/minecraft-ctor-fix.jar");
+
+        System.out.println("Version independent setup tasks running: ");
+        System.out.println("  downloadDeobfTools:");
+        File deobfToolsDir = new File(buildDir, "downloadDeobfTools");
+        File fernFlowerJarFile;
+        deobfToolsDir.mkdirs();
+        try {
+            MavenDownload.manualDownload(
+                    REPO_URL,
+                    new SimpleArtifactIdentifier("de.heisluft.reveng", "RevEng", "latest", "all", null),
+                    deobfToolsJarFile = new File(deobfToolsDir, "RevEng.jar")
+            );
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        System.out.println("    DONE \n  downloadFernFlower:");
+        File ffDir = new File(buildDir, "downloadFernFlower");
+        ffDir.mkdirs();
+        try {
+            MavenDownload.manualDownload(
+                    REPO_URL,
+                    new SimpleArtifactIdentifier("com.jetbrains", "FernFlower", "latest", null, null),
+                    fernFlowerJarFile = new File(ffDir, "FernFlower.jar")
+            );
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        System.out.println("    DONE\nVersion independent setup tasks COMPLETE");
+
         MCRepo.init(project.getGradle(), REPO_URL);
         // Java Plugin needs to be applied first as we want to configure it
         project.getPluginManager().apply(JavaPlugin.class);
@@ -128,7 +154,22 @@ public abstract class BasePlugin implements Plugin<Project> {
         // TODO: try to merge as many tasks from subprojects into base plugins
         // setup shared tasks
         TaskContainer tasks = project.getTasks();
+
+        TaskProvider<OutputtingJavaExec> decompMC = tasks.register("decompMC", OutputtingJavaExec.class, task -> {
+            task.setOutputFilename("minecraft.jar");
+            task.classpath(fernFlowerJarFile);
+            task.getMainClass().set("org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler");
+            task.setMaxHeapSize("4G");
+            task.getJavaLauncher().set(project.getExtensions().getByType(JavaToolchainService.class).launcherFor(v -> v.getLanguageVersion().set(JavaLanguageVersion.of(11))));
+        });
+
+        tasks.register("extractSrc", Extract.class, task -> {
+            task.dependsOn(decompMC);
+            task.getInput().set(decompMC.get().getOutput());
+        });
+
         TaskProvider<CPFileDecorator> makeCPFileP = tasks.register("makeCPFile", CPFileDecorator.class);
+
         TaskProvider<IdeaRunConfigMaker> genBSLRun = tasks.register("genBSLRun", IdeaRunConfigMaker.class, t -> {
             t.dependsOn(makeCPFileP);
             ListProperty<String> jvmArgs = t.getJvmArgs();
@@ -144,6 +185,10 @@ public abstract class BasePlugin implements Plugin<Project> {
             jvmArgs.add("--add-opens java.base/java.lang.invoke=cpw.mods.securejarhandler");
             jvmArgs.add("--add-exports java.base/sun.security.util=cpw.mods.securejarhandler");
             jvmArgs.add("--add-exports jdk.naming.dns/com.sun.jndi.dns=java.naming");
+        });
+
+        tasks.register("genPatches", Differ.class, task -> {
+            task.getModifiedSrcDir().set(mcSourceSet.getJava().iterator().next());
         });
 
         project.afterEvaluate(project1 -> {
@@ -189,35 +234,6 @@ public abstract class BasePlugin implements Plugin<Project> {
                 task.getAppArgs().add("--version=" + version);
             });
         });
-
-        File buildDir = project.getBuildDir();
-
-        System.out.println("Version independent setup tasks running: ");
-        System.out.println("  downloadDeobfTools:");
-        File deobfToolsDir = new File(buildDir, "downloadDeobfTools");
-        deobfToolsDir.mkdirs();
-        try {
-            MavenDownload.manualDownload(
-                    REPO_URL,
-                    new SimpleArtifactIdentifier("de.heisluft.reveng", "RevEng", "latest", "all", null),
-                    deobfToolsJarFile = new File(deobfToolsDir, "RevEng.jar")
-                    );
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        System.out.println("    DONE \n  downloadFernFlower:");
-        File ffDir = new File(buildDir, "downloadFernFlower");
-        ffDir.mkdirs();
-        try {
-            MavenDownload.manualDownload(
-                    REPO_URL,
-                    new SimpleArtifactIdentifier("com.jetbrains", "FernFlower", "latest", null, null),
-                    fernFlowerJarFile = new File(ffDir, "FernFlower.jar")
-            );
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        System.out.println("    DONE\nVersion independent setup tasks COMPLETE");
     }
 
     private void launchProcess(Provider<JavaLauncher> jExec, String cp, String main, Object... args) {

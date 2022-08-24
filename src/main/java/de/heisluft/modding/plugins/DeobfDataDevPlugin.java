@@ -1,5 +1,6 @@
 package de.heisluft.modding.plugins;
 
+import de.heisluft.modding.tasks.Differ;
 import de.heisluft.modding.tasks.Extract;
 import de.heisluft.modding.tasks.OutputtingJavaExec;
 import org.gradle.api.Project;
@@ -7,8 +8,6 @@ import org.gradle.api.file.DuplicatesStrategy;
 import org.gradle.api.tasks.Copy;
 import org.gradle.api.tasks.TaskContainer;
 import org.gradle.api.tasks.TaskProvider;
-import org.gradle.jvm.toolchain.JavaLanguageVersion;
-import org.gradle.jvm.toolchain.JavaToolchainService;
 
 import java.io.File;
 import java.io.IOException;
@@ -25,7 +24,7 @@ public class DeobfDataDevPlugin extends BasePlugin {
         File deobfWorkspaceDir = project.file("deobf-workspace");
         deobfWorkspaceDir.mkdirs();
 
-        TaskProvider<OutputtingJavaExec> gATT = tasks.register("genATsTemp", OutputtingJavaExec.class, task -> {
+        TaskProvider<OutputtingJavaExec> genATs = tasks.register("genATs", OutputtingJavaExec.class, task -> {
             task.classpath(deobfToolsJarFile);
             task.setOutputFilename("at.cfg");
             task.getMainClass().set("de.heisluft.reveng.ATGenerator");
@@ -35,10 +34,10 @@ public class DeobfDataDevPlugin extends BasePlugin {
             );
         });
 
-        TaskProvider<OutputtingJavaExec> aATT = tasks.register("applyATsTemp", OutputtingJavaExec.class, task -> {
-            File inFile = gATT.get().getOutput().get().getAsFile();
+        TaskProvider<OutputtingJavaExec> applyATs = tasks.register("applyATs", OutputtingJavaExec.class, task -> {
+            File inFile = genATs.get().getOutput().get().getAsFile();
             task.onlyIf(t -> inFile.exists());
-            task.dependsOn(gATT);
+            task.dependsOn(genATs);
             task.classpath(deobfToolsJarFile);
             task.setOutputFilename("minecraft.jar");
             task.getMainClass().set("de.heisluft.reveng.at.ATApplicator");
@@ -49,7 +48,7 @@ public class DeobfDataDevPlugin extends BasePlugin {
             );
         });
 
-        TaskProvider<OutputtingJavaExec> gMT = tasks.register("genMappingsTemp", OutputtingJavaExec.class, task -> {
+        TaskProvider<OutputtingJavaExec> genMappings = tasks.register("genMappings", OutputtingJavaExec.class, task -> {
             task.classpath(deobfToolsJarFile);
             task.setOutputFilename("mappings-generated.frg");
             task.getMainClass().set("de.heisluft.reveng.Remapper");
@@ -70,9 +69,9 @@ public class DeobfDataDevPlugin extends BasePlugin {
             });
         });
 
-        TaskProvider<OutputtingJavaExec> rJFT = tasks.register("remapJarFrgTemp", OutputtingJavaExec.class, task -> {
+        TaskProvider<OutputtingJavaExec> remapJar = tasks.register("remapJar", OutputtingJavaExec.class, task -> {
             task.getOutputs().upToDateWhen(t -> false);
-            task.dependsOn(gMT, aATT);
+            task.dependsOn(genMappings, applyATs);
             task.classpath(deobfToolsJarFile);
             task.setOutputFilename("minecraft.jar");
             task.getMainClass().set("de.heisluft.reveng.Remapper");
@@ -80,7 +79,7 @@ public class DeobfDataDevPlugin extends BasePlugin {
             task.doFirst(t -> {
                 task.args(
                         "remap",
-                        gATT.get().getOutput().get().getAsFile().exists() ? aATT.get().getOutput() : ctorFixedMC,
+                        genATs.get().getOutput().get().getAsFile().exists() ? applyATs.get().getOutput() : ctorFixedMC,
                         new File(deobfWorkspaceDir, "fergie.frg").getAbsolutePath(),
                         "-o",
                         task.getOutput().get().getAsFile().getAbsolutePath()
@@ -88,26 +87,24 @@ public class DeobfDataDevPlugin extends BasePlugin {
             });
         });
 
-        TaskProvider<OutputtingJavaExec> decompMC = tasks.register("decompMC", OutputtingJavaExec.class, task -> {
-            task.dependsOn(rJFT);
-            task.setOutputFilename("minecraft.jar");
-            task.classpath(fernFlowerJarFile);
-            task.getMainClass().set("org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler");
-            task.setMaxHeapSize("4G");
-            task.getJavaLauncher().set(project.getExtensions().getByType(JavaToolchainService.class).launcherFor(v -> v.getLanguageVersion().set(JavaLanguageVersion.of(11))));
+        tasks.withType(OutputtingJavaExec.class).getByName("decompMC", task -> {
+            task.dependsOn(remapJar);
             task.args(
-                    rJFT.get().getOutput().get().getAsFile().getAbsolutePath(),
-                    task.getOutput().get().getAsFile().toPath().getParent().toAbsolutePath().toString()
+                    remapJar.get().getOutput().get(),
+                    task.getOutput().get().getAsFile().getParentFile()
             );
         });
-        TaskProvider<Extract> extractSrc = tasks.register("extractSrc", Extract.class, task -> {
-            task.dependsOn(decompMC);
-            task.getInput().set(decompMC.get().getOutput());
+
+        Extract extractSrc = (Extract)tasks.getByName("extractSrc");
+
+        tasks.withType(Differ.class).getByName("genPatches", task -> {
+            task.getBackupSrcDir().set(extractSrc.getOutput());
         });
+
         tasks.register("copySrc", Copy.class, task -> {
             task.dependsOn(extractSrc);
             task.into(mcSourceSet.getJava().getSrcDirs().iterator().next());
-            task.from(extractSrc.get().getOutput());
+            task.from(extractSrc.getOutput());
             task.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE);
         });
     }
