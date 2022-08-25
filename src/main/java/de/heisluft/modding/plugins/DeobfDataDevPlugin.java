@@ -3,6 +3,7 @@ package de.heisluft.modding.plugins;
 import de.heisluft.modding.tasks.Differ;
 import de.heisluft.modding.tasks.Extract;
 import de.heisluft.modding.tasks.OutputtingJavaExec;
+import de.heisluft.modding.util.Util;
 import org.gradle.api.Project;
 import org.gradle.api.file.DuplicatesStrategy;
 import org.gradle.api.tasks.Copy;
@@ -11,7 +12,10 @@ import org.gradle.api.tasks.TaskProvider;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
 
 public class DeobfDataDevPlugin extends BasePlugin {
     @Override
@@ -21,8 +25,14 @@ public class DeobfDataDevPlugin extends BasePlugin {
 
         tasks.getByName("classes").dependsOn(tasks.getByName(mcSourceSet.getClassesTaskName()));
 
-        File deobfWorkspaceDir = project.file("deobf-workspace");
-        deobfWorkspaceDir.mkdirs();
+        Path deobfWorkspaceDir = project.file("deobf-workspace").toPath();
+        Path frgChecksumFile = deobfWorkspaceDir.resolve("fergie.sha512");
+        Path frgFile = deobfWorkspaceDir.resolve("fergie.frg");
+        try {
+            Files.createDirectories(deobfWorkspaceDir);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
 
         TaskProvider<OutputtingJavaExec> genATs = tasks.register("genATs", OutputtingJavaExec.class, task -> {
             task.classpath(deobfToolsJarFile);
@@ -58,33 +68,34 @@ public class DeobfDataDevPlugin extends BasePlugin {
                     task.getOutput().get().getAsFile().getAbsolutePath()
             );
             task.doLast("copyToMainDir", t -> {
-                File target = new File(deobfWorkspaceDir, "fergie.frg");
-                if(!target.isFile()) {
                     try {
-                        Files.copy(task.getOutput().get().getAsFile().toPath(), target.toPath());
+                        if(!Files.isRegularFile(frgFile)) {
+                            Files.copy(task.getOutput().get().getAsFile().toPath(), frgFile);
+                            Files.write(frgChecksumFile, Util.SHA_512.digest(Files.readAllBytes(frgFile)));
+                        }
+                        if(!Files.isRegularFile(frgChecksumFile)) // recreate if necessary
+                            Files.write(frgChecksumFile, Util.SHA_512.digest(Files.readAllBytes(frgFile)));
                     } catch (IOException e) {
                         throw new RuntimeException(e);
                     }
-                }
             });
         });
 
         TaskProvider<OutputtingJavaExec> remapJar = tasks.register("remapJar", OutputtingJavaExec.class, task -> {
-            task.getOutputs().upToDateWhen(t -> false);
+            task.getOutputs().upToDateWhen(t -> {
+                try {
+                    byte[] computed = Util.SHA_512.digest(Files.readAllBytes(frgFile));
+                    boolean wasEqual =  Arrays.equals(Files.readAllBytes(frgChecksumFile), computed);
+                    if(!wasEqual) Files.write(frgChecksumFile, computed); // Update checksum
+                    return wasEqual;
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
             task.dependsOn(genMappings, applyATs);
             task.classpath(deobfToolsJarFile);
             task.setOutputFilename("minecraft.jar");
             task.getMainClass().set("de.heisluft.reveng.Remapper");
-
-            task.doFirst(t -> {
-                task.args(
-                        "remap",
-                        genATs.get().getOutput().get().getAsFile().exists() ? applyATs.get().getOutput() : ctorFixedMC,
-                        new File(deobfWorkspaceDir, "fergie.frg").getAbsolutePath(),
-                        "-o",
-                        task.getOutput().get().getAsFile().getAbsolutePath()
-                );
-            });
         });
 
         tasks.withType(OutputtingJavaExec.class).getByName("decompMC", task -> {
@@ -106,6 +117,17 @@ public class DeobfDataDevPlugin extends BasePlugin {
             task.into(mcSourceSet.getJava().getSrcDirs().iterator().next());
             task.from(extractSrc.getOutput());
             task.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE);
+        });
+
+        project.afterEvaluate(project1 -> {
+            remapJar.configure(task ->
+                task.args(
+                        "remap",
+                        genATs.get().getOutput().get().getAsFile().exists() ? applyATs.get().getOutput() : ctorFixedMC,
+                        frgFile.toAbsolutePath(),
+                        "-o",
+                        task.getOutput().get().getAsFile().getAbsolutePath()
+                ));
         });
     }
 }

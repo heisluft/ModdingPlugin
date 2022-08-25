@@ -45,31 +45,30 @@ public class JarModDevPlugin extends BasePlugin {
       );
     });
 
-    TaskProvider<Zip2ZipCopy> stripLibs = tasks.register("stripLibraries", Zip2ZipCopy.class, task -> {
-      task.dependsOn(remapJar);
-      task.getInput().set(remapJar.get().getOutput());
-      task.getIncludedPaths().addAll(Arrays.asList("util/**", "com/**"));
-    });
-
     TaskProvider<OutputtingJavaExec> applyAts = tasks.register("applyAts", OutputtingJavaExec.class, task -> {
-      task.dependsOn(stripLibs);
+      task.dependsOn(remapJar);
       task.classpath(deobfToolsJarFile);
       task.setOutputFilename("minecraft.jar");
       task.getMainClass().set("de.heisluft.reveng.at.ATApplicator");
       task.args(
-          stripLibs.get().getOutput().getAsFile().get().getAbsolutePath(),
-          new File(extractData.get().getOutput().getAsFile().get(), "at.cfg"),
-          task.getOutput().getAsFile().get().getAbsolutePath()
+              remapJar.get().getOutput().get(),
+              new File(extractData.get().getOutput().getAsFile().get(), "at.cfg"),
+              task.getOutput().get()
       );
     });
 
-    tasks.withType(OutputtingJavaExec.class).getByName("decompMC", task -> {
+    TaskProvider<Zip2ZipCopy> stripLibs = tasks.register("stripLibraries", Zip2ZipCopy.class, task -> {
       task.dependsOn(applyAts);
+      task.getInput().set(applyAts.get().getOutput());
+      task.getIncludedPaths().addAll(Arrays.asList("util/**", "com/**"));
+    });
+
+    tasks.withType(OutputtingJavaExec.class).getByName("decompMC", task -> {
+      task.dependsOn(stripLibs);
       task.args(
-              applyAts.get().getOutput().get(),
+              stripLibs.get().getOutput().get(),
               task.getOutput().get().getAsFile().getParentFile()
       );
-
     });
 
     Extract extractSrc = (Extract) tasks.getByName("extractSrc");
