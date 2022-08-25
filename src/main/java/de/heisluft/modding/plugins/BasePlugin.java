@@ -9,6 +9,7 @@ import net.minecraftforge.artifactural.base.artifact.SimpleArtifactIdentifier;
 import org.gradle.api.Action;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
+import org.gradle.api.Task;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.plugins.ExtensionContainer;
 import org.gradle.api.plugins.JavaPlugin;
@@ -24,6 +25,7 @@ import org.gradle.jvm.toolchain.JavaLauncher;
 import org.gradle.jvm.toolchain.JavaToolchainService;
 import org.gradle.jvm.toolchain.JavaToolchainSpec;
 
+import javax.annotation.Nonnull;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -34,7 +36,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * A plugin implementation providing shared tasks among plugins related to classic modding
@@ -166,6 +170,27 @@ public abstract class BasePlugin implements Plugin<Project> {
         tasks.register("extractSrc", Extract.class, task -> {
             task.dependsOn(decompMC);
             task.getInput().set(decompMC.get().getOutput());
+
+            // This cant be a lambda because Gradle will shit itself otherwise
+            //noinspection Convert2Lambda
+            task.doFirst(new Action<Task>() { // If work needs to be done, we have to first purge the output
+                @Override
+                public void execute(@Nonnull Task task) {
+                    Path out = ((Extract)task).getOutput().getAsFile().get().toPath();
+                    try(Stream<Path> stream = Files.walk(out)) {
+                        stream.sorted((o1, o2) -> o1.startsWith(o2) ? -1 : o2.startsWith(o1) ? 1 : 0).forEach(p -> {
+                            if(out.equals(p)) return;
+                            try {
+                                Files.delete(p);
+                            } catch (IOException e) {
+                                throw new UncheckedIOException(e);
+                            }
+                        });
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                }
+            });
         });
 
         TaskProvider<CPFileDecorator> makeCPFileP = tasks.register("makeCPFile", CPFileDecorator.class);
@@ -188,7 +213,7 @@ public abstract class BasePlugin implements Plugin<Project> {
         });
 
         tasks.register("genPatches", Differ.class, task -> {
-            task.getModifiedSrcDir().set(mcSourceSet.getJava().iterator().next());
+            task.getModifiedSrcDir().set(mcSourceSet.getJava().getSrcDirs().iterator().next());
         });
 
         project.afterEvaluate(project1 -> {
@@ -236,7 +261,7 @@ public abstract class BasePlugin implements Plugin<Project> {
         });
     }
 
-    private void launchProcess(Provider<JavaLauncher> jExec, String cp, String main, Object... args) {
+    static void launchProcess(Provider<JavaLauncher> jExec, String cp, String main, Object... args) {
         try {
             List<String> cmd = new ArrayList<>(args.length + 4);
             cmd.add(jExec.get().getExecutablePath().getAsFile().getAbsolutePath());

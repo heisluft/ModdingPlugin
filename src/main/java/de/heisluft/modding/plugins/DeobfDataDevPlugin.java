@@ -4,12 +4,15 @@ import de.heisluft.modding.tasks.Differ;
 import de.heisluft.modding.tasks.Extract;
 import de.heisluft.modding.tasks.OutputtingJavaExec;
 import de.heisluft.modding.util.Util;
+import org.gradle.api.Action;
 import org.gradle.api.Project;
+import org.gradle.api.Task;
 import org.gradle.api.file.DuplicatesStrategy;
 import org.gradle.api.tasks.Copy;
 import org.gradle.api.tasks.TaskContainer;
 import org.gradle.api.tasks.TaskProvider;
 
+import javax.annotation.Nonnull;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -67,17 +70,20 @@ public class DeobfDataDevPlugin extends BasePlugin {
                     ctorFixedMC,
                     task.getOutput().get().getAsFile().getAbsolutePath()
             );
-            task.doLast("copyToMainDir", t -> {
+            // This cant be a lambda because Gradle will shit itself otherwise
+            //noinspection Convert2Lambda
+            task.doLast("copyToMainDir", new Action<Task>() {
+                @Override
+                public void execute(@Nonnull Task t) {
                     try {
-                        if(!Files.isRegularFile(frgFile)) {
+                        if (!Files.isRegularFile(frgFile)) {
                             Files.copy(task.getOutput().get().getAsFile().toPath(), frgFile);
                             Files.write(frgChecksumFile, Util.SHA_512.digest(Files.readAllBytes(frgFile)));
                         }
-                        if(!Files.isRegularFile(frgChecksumFile)) // recreate if necessary
-                            Files.write(frgChecksumFile, Util.SHA_512.digest(Files.readAllBytes(frgFile)));
                     } catch (IOException e) {
                         throw new RuntimeException(e);
                     }
+                }
             });
         });
 
@@ -85,8 +91,9 @@ public class DeobfDataDevPlugin extends BasePlugin {
             task.getOutputs().upToDateWhen(t -> {
                 try {
                     byte[] computed = Util.SHA_512.digest(Files.readAllBytes(frgFile));
-                    boolean wasEqual =  Arrays.equals(Files.readAllBytes(frgChecksumFile), computed);
-                    if(!wasEqual) Files.write(frgChecksumFile, computed); // Update checksum
+                    // Don't cache if sha was deleted
+                    boolean wasEqual = Files.isRegularFile(frgChecksumFile) && Arrays.equals(Files.readAllBytes(frgChecksumFile), computed);
+                    if(!wasEqual) Files.write(frgChecksumFile, computed); // Update / write new checksum
                     return wasEqual;
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);
@@ -100,13 +107,14 @@ public class DeobfDataDevPlugin extends BasePlugin {
 
         tasks.withType(OutputtingJavaExec.class).getByName("decompMC", task -> {
             task.dependsOn(remapJar);
+            task.getOutputs().upToDateWhen(t -> !remapJar.get().getDidWork());
             task.args(
                     remapJar.get().getOutput().get(),
                     task.getOutput().get().getAsFile().getParentFile()
             );
         });
 
-        Extract extractSrc = (Extract)tasks.getByName("extractSrc");
+        Extract extractSrc = (Extract) tasks.getByName("extractSrc");
 
         tasks.withType(Differ.class).getByName("genPatches", task -> {
             task.getBackupSrcDir().set(extractSrc.getOutput());
