@@ -13,6 +13,8 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
@@ -20,6 +22,24 @@ import java.util.regex.Pattern;
 public class Util {
 
   private static final Map<String, ?> PROPS = Collections.singletonMap("create", "true");
+
+  public static final MessageDigest SHA_512;
+
+  private static final char[] hexChars = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
+
+  static {
+    try {
+      SHA_512 = MessageDigest.getInstance("SHA-512");
+    } catch (NoSuchAlgorithmException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  public static String bytesToHex(byte[] bytes) {
+    StringBuilder builder = new StringBuilder(bytes.length * 2);
+    for (byte b : bytes) builder.append(hexChars[(((int) b) & 0xff) >>> 4]).append(hexChars[b & 0xf]);
+    return builder.toString();
+  }
 
   public static FileSystem createFS(File at, boolean createFile) throws IOException {
     Path p = at.toPath();

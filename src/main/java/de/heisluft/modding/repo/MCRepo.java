@@ -14,21 +14,10 @@ import java.security.NoSuchAlgorithmException;
 
 public class MCRepo {
 
-  private static final char[] hexChars = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
-
-  private static final MessageDigest SHA_512;
   private static MCRepo instance;
   private final String repoURL;
   private final Path cacheDir;
   private static final Logger LOGGER = Logger.getLogger("MCRepo");
-
-  static {
-    try {
-      SHA_512 = MessageDigest.getInstance("SHA-512");
-    } catch (NoSuchAlgorithmException e) {
-      throw new RuntimeException(e);
-    }
-  }
 
   private MCRepo(Path cacheDir, String repoURL) throws IOException {
     this.repoURL = repoURL;
@@ -84,7 +73,7 @@ public class MCRepo {
       expHash = new String(hashBuf);
     }
     if(Files.isRegularFile(targetFile)) {
-      String compHash = bytesToHex(SHA_512.digest(Files.readAllBytes(targetFile)));
+      String compHash = Util.bytesToHex(Util.SHA_512.digest(Files.readAllBytes(targetFile)));
       if(!compHash.equals(expHash)) {
         LOGGER.warn("warning: checksum mismatch for file " + targetFile.toAbsolutePath() + ", expected: " + expHash + ", computed: " + compHash);
       }
@@ -94,20 +83,14 @@ public class MCRepo {
       byte[] buf = new byte[8192];
       int read;
       while ((read = is.read(buf)) != -1) {
-        SHA_512.update(buf, 0, read);
+        Util.SHA_512.update(buf, 0, read);
         os.write(buf, 0, read);
       }
     }
-    String compHash = bytesToHex(SHA_512.digest());
+    String compHash = Util.bytesToHex(Util.SHA_512.digest());
     if(!compHash.equals(expHash)) {
       LOGGER.warn("warning: checksum mismatch for file " + targetFile.toAbsolutePath() + ", expected: " + expHash + ", computed: " + compHash);
     }
     return targetFile;
-  }
-
-  private static String bytesToHex(byte[] bytes) {
-    StringBuilder builder = new StringBuilder(bytes.length * 2);
-    for (byte b : bytes) builder.append(hexChars[(((int) b) & 0xff) >>> 4]).append(hexChars[b & 0xf]);
-    return builder.toString();
   }
 }
