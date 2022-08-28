@@ -3,12 +3,12 @@ package de.heisluft.modding.plugins;
 import de.heisluft.modding.Ext;
 import de.heisluft.modding.tasks.*;
 import org.gradle.api.Project;
-import org.gradle.api.file.DuplicatesStrategy;
 import org.gradle.api.tasks.*;
 
 import java.io.File;
 import java.util.Arrays;
 
+//TODO: Make extractData Task cacheable, its screwing up builds
 public class JarModDevPlugin extends BasePlugin {
 
   @Override
@@ -60,6 +60,7 @@ public class JarModDevPlugin extends BasePlugin {
     TaskProvider<Zip2ZipCopy> stripLibs = tasks.register("stripLibraries", Zip2ZipCopy.class, task -> {
       task.dependsOn(applyAts);
       task.getInput().set(applyAts.get().getOutput());
+      task.getOutput().set(new File(project.getBuildDir(), task.getName() + File.separator + "minecraft.jar"));
       task.getIncludedPaths().addAll(Arrays.asList("util/**", "com/**"));
     });
 
@@ -71,21 +72,10 @@ public class JarModDevPlugin extends BasePlugin {
       );
     });
 
-    Extract extractSrc = (Extract) tasks.getByName("extractSrc");
-
-    TaskProvider<Patcher> applyCompilerPatches = tasks.register("applyCompilerPatches", Patcher.class, task -> {
-      task.dependsOn(extractSrc);
+    Patcher applyCompilerPatches = tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> {
       task.getPatchDir().set(extractData.get().getOutput().dir("patches"));
-      task.getInput().set(extractSrc.getOutput());
     });
 
-    tasks.register("copySrc", Copy.class, task -> {
-      task.dependsOn(applyCompilerPatches);
-      task.into(mcSourceSet.getJava().getSrcDirs().iterator().next());
-      task.from(applyCompilerPatches.get().getOutput());
-      task.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE);
-    });
-
-    tasks.getByName("genPatches", task -> ((Differ) task).getBackupSrcDir().set(applyCompilerPatches.get().getOutput()));
+    tasks.getByName("genPatches", task -> ((Differ) task).getBackupSrcDir().set(applyCompilerPatches.getOutput()));
   }
 }
