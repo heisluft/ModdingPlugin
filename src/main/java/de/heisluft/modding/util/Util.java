@@ -5,6 +5,7 @@ import org.gradle.api.invocation.Gradle;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -18,6 +19,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 public class Util {
 
@@ -39,6 +41,22 @@ public class Util {
     StringBuilder builder = new StringBuilder(bytes.length * 2);
     for (byte b : bytes) builder.append(hexChars[(((int) b) & 0xff) >>> 4]).append(hexChars[b & 0xf]);
     return builder.toString();
+  }
+
+  public static void deleteContents(File dir) throws IOException {
+    Path out = dir.toPath();
+    try(Stream<Path> stream = Files.walk(out)) {
+      stream.sorted((o1, o2) -> o1.startsWith(o2) ? -1 : o2.startsWith(o1) ? 1 : 0).forEach(p -> {
+        if(out.equals(p)) return;
+        try {
+          Files.delete(p);
+        } catch (IOException e) {
+          throw new UncheckedIOException(e);
+        }
+      });
+    } catch (UncheckedIOException e) {
+      throw new IOException("Error while deleting directory contents of '" + out.toAbsolutePath() + "'", e.getCause());
+    }
   }
 
   public static FileSystem createFS(File at, boolean createFile) throws IOException {

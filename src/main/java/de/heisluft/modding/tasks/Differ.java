@@ -13,6 +13,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Stream;
 
 public abstract class Differ extends DefaultTask {
 
@@ -34,22 +35,17 @@ public abstract class Differ extends DefaultTask {
     Path origSrc = getBackupSrcDir().getAsFile().get().toPath();
     Path modSrc = getModifiedSrcDir().getAsFile().get().toPath();
     Path patches = getPatchDir().getAsFile().get().toPath();
-    try {
-      Files.walk(origSrc).filter(Files::isRegularFile).forEach(p -> {
+    try(Stream<Path> ps = Files.walk(origSrc)) {
+      ps.filter(Files::isRegularFile).forEach(p -> {
         try {
           Path rel = origSrc.relativize(p);
           List<String> origLines = Files.readAllLines(p);
-          Path patchP = patches.resolve(rel);
-          List<String> patchLines = UnifiedDiffUtils.generateUnifiedDiff(
-              rel.toString(),
-              "patches/" + rel.toString(),
-              origLines,
+          List<String> patchLines = UnifiedDiffUtils.generateUnifiedDiff(rel.toString(), "patches/" + rel, origLines,
               DiffUtils.diff(origLines, Files.readAllLines(modSrc.resolve(rel))),
               3
           );
           if(patchLines.isEmpty()) return;
-          Files.createDirectories(patchP.getParent());
-          Files.write(patchP.resolveSibling(patchP.getFileName().toString().replace(".java", ".patch")), patchLines);
+          Files.write(patches.resolve(rel.getFileName().toString().replace(".java", ".patch")), patchLines);
         } catch(IOException ex) {
           throw new UncheckedIOException(ex);
         }

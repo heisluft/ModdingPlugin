@@ -5,17 +5,20 @@ import de.heisluft.modding.Ext;
 import de.heisluft.modding.repo.MCRepo;
 import de.heisluft.modding.repo.ResourceRepo;
 import de.heisluft.modding.tasks.*;
+import de.heisluft.modding.util.Util;
 import net.minecraftforge.artifactural.base.artifact.SimpleArtifactIdentifier;
 import org.gradle.api.Action;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
+import org.gradle.api.file.DuplicatesStrategy;
 import org.gradle.api.plugins.ExtensionContainer;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Provider;
+import org.gradle.api.tasks.Copy;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.TaskContainer;
 import org.gradle.api.tasks.TaskProvider;
@@ -167,8 +170,7 @@ public abstract class BasePlugin implements Plugin<Project> {
             task.getJavaLauncher().set(project.getExtensions().getByType(JavaToolchainService.class).launcherFor(v -> v.getLanguageVersion().set(JavaLanguageVersion.of(11))));
         });
 
-        tasks.register("extractSrc", Extract.class, task -> {
-            task.dependsOn(decompMC);
+        TaskProvider<Extract> extractSrc = tasks.register("extractSrc", Extract.class, task -> {
             task.getInput().set(decompMC.get().getOutput());
 
             // This cant be a lambda because Gradle will shit itself otherwise
@@ -176,21 +178,54 @@ public abstract class BasePlugin implements Plugin<Project> {
             task.doFirst(new Action<Task>() { // If work needs to be done, we have to first purge the output
                 @Override
                 public void execute(@Nonnull Task task) {
-                    Path out = ((Extract)task).getOutput().getAsFile().get().toPath();
-                    try(Stream<Path> stream = Files.walk(out)) {
-                        stream.sorted((o1, o2) -> o1.startsWith(o2) ? -1 : o2.startsWith(o1) ? 1 : 0).forEach(p -> {
-                            if(out.equals(p)) return;
-                            try {
-                                Files.delete(p);
-                            } catch (IOException e) {
-                                throw new UncheckedIOException(e);
-                            }
-                        });
+                    try {
+                        Util.deleteContents(((Extract)task).getOutput().getAsFile().get());
                     } catch (IOException e) {
                         throw new UncheckedIOException(e);
                     }
                 }
             });
+        });
+
+        TaskProvider<Patcher> applyCompilerPatches = tasks.register("applyCompilerPatches", Patcher.class, task ->
+                task.getInput().set(extractSrc.get().getOutput()));
+
+        TaskProvider<Copy> copySrc = tasks.register("copySrc", Copy.class, task -> {
+            task.dependsOn(applyCompilerPatches);
+            task.into(mcSourceSet.getJava().getSrcDirs().iterator().next());
+            task.from(applyCompilerPatches.get().getOutput());
+            task.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE);
+            task.onlyIf(t -> {
+                try(Stream<Path> s = Files.walk(task.getDestinationDir().toPath(), 1)) {
+                    return !s.findAny().isPresent();
+                } catch (IOException exception) {
+                    return false;
+                }
+            });
+        });
+
+        tasks.register("regenSrc", Copy.class, task -> {
+            task.dependsOn(applyCompilerPatches);
+            task.into(mcSourceSet.getJava().getSrcDirs().iterator().next());
+            task.from(applyCompilerPatches.get().getOutput());
+            task.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE);
+            // This cant be a lambda because Gradle will shit itself otherwise
+            //noinspection Convert2Lambda
+            task.doFirst(new Action<Task>() {
+                @Override
+                public void execute(@Nonnull Task t) {
+                    try {
+                        Util.deleteContents(task.getDestinationDir());
+                    } catch (IOException ex) {
+                        throw new UncheckedIOException(ex);
+                    }
+                }
+            });
+        });
+
+        tasks.register("genPatches", Differ.class, task -> {
+            task.dependsOn(copySrc);
+            task.getModifiedSrcDir().set(mcSourceSet.getJava().getSrcDirs().iterator().next());
         });
 
         TaskProvider<CPFileDecorator> makeCPFileP = tasks.register("makeCPFile", CPFileDecorator.class);
@@ -210,10 +245,6 @@ public abstract class BasePlugin implements Plugin<Project> {
             jvmArgs.add("--add-opens java.base/java.lang.invoke=cpw.mods.securejarhandler");
             jvmArgs.add("--add-exports java.base/sun.security.util=cpw.mods.securejarhandler");
             jvmArgs.add("--add-exports jdk.naming.dns/com.sun.jndi.dns=java.naming");
-        });
-
-        tasks.register("genPatches", Differ.class, task -> {
-            task.getModifiedSrcDir().set(mcSourceSet.getJava().getSrcDirs().iterator().next());
         });
 
         project.afterEvaluate(project1 -> {

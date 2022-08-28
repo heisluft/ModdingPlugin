@@ -3,12 +3,11 @@ package de.heisluft.modding.plugins;
 import de.heisluft.modding.tasks.Differ;
 import de.heisluft.modding.tasks.Extract;
 import de.heisluft.modding.tasks.OutputtingJavaExec;
+import de.heisluft.modding.tasks.Patcher;
 import de.heisluft.modding.util.Util;
 import org.gradle.api.Action;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
-import org.gradle.api.file.DuplicatesStrategy;
-import org.gradle.api.tasks.Copy;
 import org.gradle.api.tasks.TaskContainer;
 import org.gradle.api.tasks.TaskProvider;
 
@@ -19,6 +18,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.stream.Stream;
 
 public class DeobfDataDevPlugin extends BasePlugin {
     @Override
@@ -31,8 +31,9 @@ public class DeobfDataDevPlugin extends BasePlugin {
         Path deobfWorkspaceDir = project.file("deobf-workspace").toPath();
         Path frgChecksumFile = deobfWorkspaceDir.resolve("fergie.sha512");
         Path frgFile = deobfWorkspaceDir.resolve("fergie.frg");
+        Path patchesDir = deobfWorkspaceDir.resolve("patches");
         try {
-            Files.createDirectories(deobfWorkspaceDir);
+            Files.createDirectories(patchesDir);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -114,28 +115,38 @@ public class DeobfDataDevPlugin extends BasePlugin {
             );
         });
 
-        Extract extractSrc = (Extract) tasks.getByName("extractSrc");
+        tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> task.getPatchDir().set(patchesDir.toFile()));
 
         tasks.withType(Differ.class).getByName("genPatches", task -> {
-            task.getBackupSrcDir().set(extractSrc.getOutput());
+            // This cant be a lambda because Gradle will shit itself otherwise
+            //noinspection Convert2Lambda
+            task.doLast(new Action<Task>() {
+                @Override
+                public void execute(@Nonnull Task t) {
+                    Path patchesPath = task.getPatchDir().getAsFile().get().toPath();
+                    try(Stream<Path> files = Files.walk(patchesPath)) {
+                        files.forEach(path -> {
+                            try {
+                                Files.copy(path, patchesDir.resolve(path.getFileName().toString()));
+                            } catch (IOException ex) {
+                                throw new UncheckedIOException(ex);
+                            }
+                        });
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                }
+            });
+            task.getBackupSrcDir().set(((Extract) tasks.getByName("extractSrc")).getOutput());
         });
 
-        tasks.register("copySrc", Copy.class, task -> {
-            task.dependsOn(extractSrc);
-            task.into(mcSourceSet.getJava().getSrcDirs().iterator().next());
-            task.from(extractSrc.getOutput());
-            task.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE);
-        });
-
-        project.afterEvaluate(project1 -> {
-            remapJar.configure(task ->
-                task.args(
-                        "remap",
-                        genATs.get().getOutput().get().getAsFile().exists() ? applyATs.get().getOutput() : ctorFixedMC,
-                        frgFile.toAbsolutePath(),
-                        "-o",
-                        task.getOutput().get().getAsFile().getAbsolutePath()
-                ));
-        });
+        project.afterEvaluate(project1 -> remapJar.configure(task ->
+            task.args(
+                    "remap",
+                    genATs.get().getOutput().get().getAsFile().exists() ? applyATs.get().getOutput() : ctorFixedMC,
+                    frgFile.toAbsolutePath(),
+                    "-o",
+                    task.getOutput().get().getAsFile().getAbsolutePath()
+            )));
     }
 }
