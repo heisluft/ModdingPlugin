@@ -1,7 +1,7 @@
 package de.heisluft.modding.plugins;
 
 import de.heisluft.modding.Constants;
-import de.heisluft.modding.Ext;
+import de.heisluft.modding.extensions.ClassicMCExt;
 import de.heisluft.modding.repo.MCRepo;
 import de.heisluft.modding.repo.ResourceRepo;
 import de.heisluft.modding.tasks.*;
@@ -39,7 +39,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -156,7 +155,7 @@ public abstract class BasePlugin implements Plugin<Project> {
         // For Log4j ANSI support within IntelliJ and on Windows
         d.add("runtimeOnly", "org.fusesource.jansi:jansi:2.4.0");
         // register the mcVersion extension
-        project.getExtensions().create("classicMC", Ext.class);
+        project.getExtensions().create("classicMC", ClassicMCExt.class);
 
         // TODO: try to merge as many tasks from subprojects into base plugins
         // setup shared tasks
@@ -252,7 +251,7 @@ public abstract class BasePlugin implements Plugin<Project> {
             ResourceRepo.init(project1);
 
             ExtensionContainer ext = project1.getExtensions();
-            String version = ext.getByType(Ext.class).getVersion().get();
+            String version = ext.getByType(ClassicMCExt.class).getVersion().get();
             Provider<JavaLauncher> jCMD = ext.getByType(JavaToolchainService.class).launcherFor(ext.getByType(JavaPluginExtension.class).getToolchain());
 
             System.out.println("Version dependent setup tasks running: ");

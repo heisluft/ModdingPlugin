@@ -1,14 +1,19 @@
 package de.heisluft.modding.plugins;
 
-import de.heisluft.modding.Ext;
+import de.heisluft.modding.extensions.ClassicMCExt;
 import de.heisluft.modding.tasks.*;
+import de.heisluft.modding.util.Util;
+import org.gradle.api.Action;
 import org.gradle.api.Project;
+import org.gradle.api.Task;
 import org.gradle.api.tasks.*;
 
+import javax.annotation.Nonnull;
 import java.io.File;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.Arrays;
 
-//TODO: Make extractData Task cacheable, its screwing up builds
 public class JarModDevPlugin extends BasePlugin {
 
   @Override
@@ -20,7 +25,7 @@ public class JarModDevPlugin extends BasePlugin {
 
     TaskProvider<MavenDownload> downloadDeobfData = tasks.register("downloadDeobfData", MavenDownload.class, task -> {
       task.getGroupName().set("de.heisluft.deobf.data");
-      task.getArtifactName().set(project.getExtensions().getByType(Ext.class).getVersion());
+      task.getArtifactName().set(project.getExtensions().getByType(ClassicMCExt.class).getVersion());
       task.getExtension().set("zip");
       task.getMavenRepoUrl().set(REPO_URL);
     });
@@ -29,6 +34,18 @@ public class JarModDevPlugin extends BasePlugin {
       task.dependsOn(downloadDeobfData);
       task.getInput().set(downloadDeobfData.get().getOutput());
       task.getIncludedPaths().addAll(Arrays.asList("fergie.frg", "at.cfg", "patches/*"));
+      // This cant be a lambda because Gradle will shit itself otherwise
+      //noinspection Convert2Lambda
+      task.doFirst(new Action<Task>() { // If work needs to be done, we have to first purge the output
+        @Override
+        public void execute(@Nonnull Task task) {
+          try {
+            Util.deleteContents(((Extract)task).getOutput().getAsFile().get());
+          } catch (IOException e) {
+            throw new UncheckedIOException(e);
+          }
+        }
+      });
     });
 
     TaskProvider<OutputtingJavaExec> remapJar = tasks.register("remapJar", OutputtingJavaExec.class, task -> {

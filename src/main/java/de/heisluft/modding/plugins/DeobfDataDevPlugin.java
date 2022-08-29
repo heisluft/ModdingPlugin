@@ -1,5 +1,7 @@
 package de.heisluft.modding.plugins;
 
+import de.heisluft.modding.extensions.ClassicMCExt;
+import de.heisluft.modding.extensions.DeobfDataExt;
 import de.heisluft.modding.tasks.Differ;
 import de.heisluft.modding.tasks.Extract;
 import de.heisluft.modding.tasks.OutputtingJavaExec;
@@ -8,6 +10,7 @@ import de.heisluft.modding.util.Util;
 import org.gradle.api.Action;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
+import org.gradle.api.plugins.ExtensionAware;
 import org.gradle.api.tasks.TaskContainer;
 import org.gradle.api.tasks.TaskProvider;
 
@@ -24,6 +27,8 @@ public class DeobfDataDevPlugin extends BasePlugin {
     @Override
     public void apply(Project project) {
         super.apply(project);
+        project.getExtensions().create("deobfData", DeobfDataExt.class);
+
         TaskContainer tasks = project.getTasks();
 
         tasks.getByName("classes").dependsOn(tasks.getByName(mcSourceSet.getClassesTaskName()));
