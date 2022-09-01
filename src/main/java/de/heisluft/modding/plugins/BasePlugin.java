@@ -188,8 +188,21 @@ public abstract class BasePlugin implements Plugin<Project> {
             });
         });
 
-        TaskProvider<Patcher> applyCompilerPatches = tasks.register("applyCompilerPatches", Patcher.class, task ->
-                task.getInput().set(extractSrc.get().getOutput()));
+        TaskProvider<Patcher> applyCompilerPatches = tasks.register("applyCompilerPatches", Patcher.class, task -> {
+            task.getInput().set(extractSrc.get().getOutput());
+            // This cant be a lambda because Gradle will shit itself otherwise
+            //noinspection Convert2Lambda
+            task.doFirst(new Action<Task>() { // If work needs to be done, we have to first purge the output
+                @Override
+                public void execute(@Nonnull Task task) {
+                    try {
+                        Util.deleteContents(((Patcher)task).getOutput().getAsFile().get());
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                }
+            });
+        });
 
         TaskProvider<Copy> copySrc = tasks.register("copySrc", Copy.class, task -> {
             task.dependsOn(applyCompilerPatches);
