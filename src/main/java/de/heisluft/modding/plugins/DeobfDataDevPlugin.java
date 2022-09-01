@@ -1,6 +1,5 @@
 package de.heisluft.modding.plugins;
 
-import de.heisluft.modding.extensions.ClassicMCExt;
 import de.heisluft.modding.extensions.DeobfDataExt;
 import de.heisluft.modding.tasks.Differ;
 import de.heisluft.modding.tasks.Extract;
@@ -10,7 +9,7 @@ import de.heisluft.modding.util.Util;
 import org.gradle.api.Action;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
-import org.gradle.api.plugins.ExtensionAware;
+import org.gradle.api.tasks.JavaExec;
 import org.gradle.api.tasks.TaskContainer;
 import org.gradle.api.tasks.TaskProvider;
 
@@ -34,11 +33,16 @@ public class DeobfDataDevPlugin extends BasePlugin {
         tasks.getByName("classes").dependsOn(tasks.getByName(mcSourceSet.getClassesTaskName()));
 
         Path deobfWorkspaceDir = project.file("deobf-workspace").toPath();
+        Path frgMappingsFile = deobfWorkspaceDir.resolve("fergie.frg");
         Path frgChecksumFile = deobfWorkspaceDir.resolve("fergie.sha512");
-        Path frgFile = deobfWorkspaceDir.resolve("fergie.frg");
+        Path srcMappingsFile = deobfWorkspaceDir.resolve("src.frg");
+        Path srcChecksumFile = deobfWorkspaceDir.resolve("src.sha512");
         Path patchesDir = deobfWorkspaceDir.resolve("patches");
+        Path renamedPatchesDir = project.getBuildDir().toPath().resolve("renamePatches");
+
         try {
             Files.createDirectories(patchesDir);
+            Files.createDirectories(renamedPatchesDir);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -82,9 +86,9 @@ public class DeobfDataDevPlugin extends BasePlugin {
                 @Override
                 public void execute(@Nonnull Task t) {
                     try {
-                        if (!Files.isRegularFile(frgFile)) {
-                            Files.copy(task.getOutput().get().getAsFile().toPath(), frgFile);
-                            Files.write(frgChecksumFile, Util.SHA_512.digest(Files.readAllBytes(frgFile)));
+                        if (!Files.isRegularFile(frgMappingsFile)) {
+                            Files.copy(task.getOutput().get().getAsFile().toPath(), frgMappingsFile);
+                            Files.write(frgChecksumFile, Util.SHA_512.digest(Files.readAllBytes(frgMappingsFile)));
                         }
                     } catch (IOException e) {
                         throw new RuntimeException(e);
@@ -94,18 +98,7 @@ public class DeobfDataDevPlugin extends BasePlugin {
         });
 
         TaskProvider<OutputtingJavaExec> remapJar = tasks.register("remapJar", OutputtingJavaExec.class, task -> {
-            task.getOutputs().upToDateWhen(t -> {
-                try {
-                    byte[] computed = Util.SHA_512.digest(Files.readAllBytes(frgFile));
-                    // Don't cache if sha was deleted
-                    boolean wasEqual = Files.isRegularFile(frgChecksumFile) && Arrays.equals(Files.readAllBytes(frgChecksumFile), computed);
-                    if(!wasEqual) Files.write(frgChecksumFile, computed); // Update / write new checksum
-                    return wasEqual;
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
-            task.dependsOn(genMappings, applyATs);
+            task.dependsOn(applyATs);
             task.classpath(deobfToolsJarFile);
             task.setOutputFilename("minecraft.jar");
             task.getMainClass().set("de.heisluft.reveng.Remapper");
@@ -120,9 +113,25 @@ public class DeobfDataDevPlugin extends BasePlugin {
             );
         });
 
-        tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> task.getPatchDir().set(patchesDir.toFile()));
+        TaskProvider<OutputtingJavaExec> createFrg2SrcMappings = tasks.register("createFrg2SrcMappings", OutputtingJavaExec.class, task -> {
+            task.getOutputs().upToDateWhen(t -> validateChecksumUpdating(frgMappingsFile, frgChecksumFile) && validateChecksumUpdating(srcMappingsFile, srcChecksumFile));
+            task.classpath(deobfToolsJarFile);
+            task.setOutputFilename("frg2src.frg");
+            task.getMainClass().set("de.heisluft.reveng.Remapper");
+            task.args("genMediatorMappings", frgMappingsFile, srcMappingsFile, "-o", task.getOutput().get());
+        });
+
+        TaskProvider<JavaExec> renamePatches = tasks.register("renamePatches", JavaExec.class, task -> {
+            task.getOutputs().upToDateWhen(t -> !createFrg2SrcMappings.get().getDidWork());
+            task.dependsOn(createFrg2SrcMappings);
+            task.classpath(deobfToolsJarFile);
+            task.getMainClass().set("de.heisluft.reveng.SrcLevelRemapper");
+            task.args(patchesDir, createFrg2SrcMappings.get().getOutput().get(), renamedPatchesDir);
+        });
 
         tasks.withType(Differ.class).getByName("genPatches", task -> {
+            task.onlyIf(t -> t.getProject().getExtensions().getByType(DeobfDataExt.class).getDevelopmentPhase() == 0);
+
             // This cant be a lambda because Gradle will shit itself otherwise
             //noinspection Convert2Lambda
             task.doLast(new Action<Task>() {
@@ -145,13 +154,50 @@ public class DeobfDataDevPlugin extends BasePlugin {
             task.getBackupSrcDir().set(((Extract) tasks.getByName("extractSrc")).getOutput());
         });
 
-        project.afterEvaluate(project1 -> remapJar.configure(task ->
-            task.args(
-                    "remap",
-                    genATs.get().getOutput().get().getAsFile().exists() ? applyATs.get().getOutput() : ctorFixedMC,
-                    frgFile.toAbsolutePath(),
-                    "-o",
-                    task.getOutput().get().getAsFile().getAbsolutePath()
-            )));
+
+
+        project.afterEvaluate(project1 -> {
+            boolean srcRemapping = project1.getExtensions().getByType(DeobfDataExt.class).getDevelopmentPhase() == 1;
+
+            if(srcRemapping) {
+                try {
+                    if (!Files.isRegularFile(srcMappingsFile)) {
+                        Files.copy(frgMappingsFile, srcMappingsFile);
+                        Files.write(srcChecksumFile, Util.SHA_512.digest(Files.readAllBytes(srcMappingsFile)));
+                    }
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            }
+
+            tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> {
+                if(srcRemapping) task.dependsOn(renamePatches);
+                task.getPatchDir().set((srcRemapping ? renamedPatchesDir : patchesDir).toFile());
+            });
+
+            remapJar.configure(task -> {
+                if(!srcRemapping) task.dependsOn(genMappings);
+                task.getOutputs().upToDateWhen(t -> srcRemapping ? validateChecksumUpdating(srcMappingsFile, srcChecksumFile) : validateChecksumUpdating(frgMappingsFile, frgChecksumFile));
+                task.args(
+                        "remap",
+                        genATs.get().getOutput().get().getAsFile().exists() ? applyATs.get().getOutput() : ctorFixedMC,
+                        (srcRemapping ? srcMappingsFile : frgMappingsFile).toAbsolutePath(),
+                        "-o",
+                        task.getOutput().get().getAsFile().getAbsolutePath()
+                );
+            });
+        });
+    }
+
+    private boolean validateChecksumUpdating(Path path, Path checksumPath) {
+        try {
+            byte[] computed = Util.SHA_512.digest(Files.readAllBytes(path));
+            // Don't cache if sha was deleted
+            boolean wasEqual = Files.isRegularFile(checksumPath) && Arrays.equals(Files.readAllBytes(checksumPath), computed);
+            if(!wasEqual) Files.write(checksumPath, computed); // Update / write new checksum
+            return wasEqual;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 }

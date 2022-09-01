@@ -66,7 +66,9 @@ public abstract class BasePlugin implements Plugin<Project> {
      * The location of the deobf tools jar
      */
     protected File deobfToolsJarFile;
-
+    /**
+     * The location of the constructor-fixed jar
+     */
     protected Path ctorFixedMC;
 
     /**
@@ -266,7 +268,6 @@ public abstract class BasePlugin implements Plugin<Project> {
             }
             System.out.println("    DONE\n  Resurrect Metadata:");
             Path temp = restoreMetaBase.resolve("minecraft-inners-restored.jar");
-            ctorFixedMC = restoreMetaBase.resolve("minecraft-ctor-fix.jar").toAbsolutePath();
             if(Files.notExists(temp) || Files.notExists(ctorFixedMC)) System.out.println();
             if(Files.notExists(temp)) {
                 launchProcess(jCMD, deobfToolsJarFile.getAbsolutePath(), "de.heisluft.reveng.nests.InnerClassDetector", mcJarPath, temp);
