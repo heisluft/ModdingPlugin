@@ -6,19 +6,27 @@ import de.heisluft.modding.util.Util;
 import org.gradle.api.Action;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
+import org.gradle.api.file.Directory;
 import org.gradle.api.tasks.*;
 
 import javax.annotation.Nonnull;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.Path;
 import java.util.Arrays;
 
+import static de.heisluft.modding.extensions.ClassicMCExt.SOURCE;
+
+//TODO: Either rename ATs or Rename Jar twice
 public class JarModDevPlugin extends BasePlugin {
 
   @Override
   public void apply(Project project) {
     super.apply(project);
+
+    Path renamedPatchesDir = project.getBuildDir().toPath().resolve("renamePatches");
+
     TaskContainer tasks = project.getTasks();
 
     tasks.getByName("classes").dependsOn(tasks.getByName(mcSourceSet.getClassesTaskName()));
@@ -33,7 +41,6 @@ public class JarModDevPlugin extends BasePlugin {
     TaskProvider<Extract> extractData = tasks.register("extractData", Extract.class, task -> {
       task.dependsOn(downloadDeobfData);
       task.getInput().set(downloadDeobfData.get().getOutput());
-      task.getIncludedPaths().addAll(Arrays.asList("fergie.frg", "at.cfg", "patches/*"));
       // This cant be a lambda because Gradle will shit itself otherwise
       //noinspection Convert2Lambda
       task.doFirst(new Action<Task>() { // If work needs to be done, we have to first purge the output
@@ -48,18 +55,18 @@ public class JarModDevPlugin extends BasePlugin {
       });
     });
 
+    OutputtingJavaExec createFrg2SrcMappings  = tasks.withType(OutputtingJavaExec.class).getByName("createFrg2SrcMappings", task -> {
+      Directory out = extractData.get().getOutput().get();
+      task.args("genMediatorMappings", out.file("fergie.frg"), out.file("src.frg"), "-o", task.getOutput().get());
+    });
+
+    tasks.withType(JavaExec.class).getByName("renamePatches", task -> task.args(extractData.get().getOutput().get().dir("patches"), createFrg2SrcMappings.getOutput().get(), renamedPatchesDir));
+
     TaskProvider<OutputtingJavaExec> remapJar = tasks.register("remapJar", OutputtingJavaExec.class, task -> {
       task.dependsOn(extractData);
       task.classpath(deobfToolsJarFile);
       task.setOutputFilename("minecraft.jar");
       task.getMainClass().set("de.heisluft.reveng.Remapper");
-      task.args(
-          "remap",
-          ctorFixedMC,
-          new File(extractData.get().getOutput().getAsFile().get(), "fergie.frg").getAbsolutePath(),
-          "-o",
-          task.getOutput().get().getAsFile().getAbsolutePath()
-      );
     });
 
     TaskProvider<OutputtingJavaExec> applyAts = tasks.register("applyAts", OutputtingJavaExec.class, task -> {
@@ -94,5 +101,22 @@ public class JarModDevPlugin extends BasePlugin {
     });
 
     tasks.getByName("genPatches", task -> ((Differ) task).getBackupSrcDir().set(applyCompilerPatches.getOutput()));
+
+    project.afterEvaluate(project1 -> {
+      boolean srcRemapping = project1.getExtensions().getByType(ClassicMCExt.class).getMappingType().equals(SOURCE);
+
+      tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> task.getPatchDir().set(srcRemapping ? renamedPatchesDir.toFile() : extractData.get().getOutput().get().dir("patches").getAsFile()));
+
+      remapJar.configure(task -> {
+        Directory mappingsDir = extractData.get().getOutput().get();
+        task.args(
+                "remap",
+                ctorFixedMC,
+                (srcRemapping ? mappingsDir.file("src.frg") : mappingsDir.file("fergie.frg")),
+                "-o",
+                task.getOutput().get().getAsFile().getAbsolutePath()
+        );
+      });
+    });
   }
 }

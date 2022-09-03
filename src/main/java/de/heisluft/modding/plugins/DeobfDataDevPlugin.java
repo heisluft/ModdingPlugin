@@ -1,5 +1,6 @@
 package de.heisluft.modding.plugins;
 
+import de.heisluft.modding.extensions.ClassicMCExt;
 import de.heisluft.modding.extensions.DeobfDataExt;
 import de.heisluft.modding.tasks.Differ;
 import de.heisluft.modding.tasks.Extract;
@@ -20,7 +21,11 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.stream.Stream;
+
+import static de.heisluft.modding.extensions.ClassicMCExt.FERGIE;
+import static de.heisluft.modding.extensions.ClassicMCExt.SOURCE;
 
 public class DeobfDataDevPlugin extends BasePlugin {
     @Override
@@ -113,24 +118,14 @@ public class DeobfDataDevPlugin extends BasePlugin {
             );
         });
 
-        TaskProvider<OutputtingJavaExec> createFrg2SrcMappings = tasks.register("createFrg2SrcMappings", OutputtingJavaExec.class, task -> {
+        OutputtingJavaExec createFrg2SrcMappings  = tasks.withType(OutputtingJavaExec.class).getByName("createFrg2SrcMappings", task -> {
             task.getOutputs().upToDateWhen(t -> validateChecksumUpdating(frgMappingsFile, frgChecksumFile) && validateChecksumUpdating(srcMappingsFile, srcChecksumFile));
-            task.classpath(deobfToolsJarFile);
-            task.setOutputFilename("frg2src.frg");
-            task.getMainClass().set("de.heisluft.reveng.Remapper");
             task.args("genMediatorMappings", frgMappingsFile, srcMappingsFile, "-o", task.getOutput().get());
         });
 
-        TaskProvider<JavaExec> renamePatches = tasks.register("renamePatches", JavaExec.class, task -> {
-            task.getOutputs().upToDateWhen(t -> !createFrg2SrcMappings.get().getDidWork());
-            task.dependsOn(createFrg2SrcMappings);
-            task.classpath(deobfToolsJarFile);
-            task.getMainClass().set("de.heisluft.reveng.SrcLevelRemapper");
-            task.args(patchesDir, createFrg2SrcMappings.get().getOutput().get(), renamedPatchesDir);
-        });
+        tasks.withType(JavaExec.class).getByName("renamePatches", task -> task.args(patchesDir, createFrg2SrcMappings.getOutput().get(), renamedPatchesDir));
 
         tasks.withType(Differ.class).getByName("genPatches", task -> {
-            task.onlyIf(t -> t.getProject().getExtensions().getByType(DeobfDataExt.class).getDevelopmentPhase() == 0);
 
             // This cant be a lambda because Gradle will shit itself otherwise
             //noinspection Convert2Lambda
@@ -157,7 +152,7 @@ public class DeobfDataDevPlugin extends BasePlugin {
 
 
         project.afterEvaluate(project1 -> {
-            boolean srcRemapping = project1.getExtensions().getByType(DeobfDataExt.class).getDevelopmentPhase() == 1;
+            boolean srcRemapping = Objects.equals(project1.getExtensions().getByType(ClassicMCExt.class).getMappingType(), SOURCE);
 
             if(srcRemapping) {
                 try {
@@ -170,10 +165,7 @@ public class DeobfDataDevPlugin extends BasePlugin {
                 }
             }
 
-            tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> {
-                if(srcRemapping) task.dependsOn(renamePatches);
-                task.getPatchDir().set((srcRemapping ? renamedPatchesDir : patchesDir).toFile());
-            });
+            tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> task.getPatchDir().set((srcRemapping ? renamedPatchesDir : patchesDir).toFile()));
 
             remapJar.configure(task -> {
                 if(!srcRemapping) task.dependsOn(genMappings);

@@ -18,10 +18,7 @@ import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Provider;
-import org.gradle.api.tasks.Copy;
-import org.gradle.api.tasks.SourceSet;
-import org.gradle.api.tasks.TaskContainer;
-import org.gradle.api.tasks.TaskProvider;
+import org.gradle.api.tasks.*;
 import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
 import org.gradle.jvm.toolchain.JavaLauncher;
@@ -41,6 +38,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+
+import static de.heisluft.modding.extensions.ClassicMCExt.FERGIE;
+import static de.heisluft.modding.extensions.ClassicMCExt.SOURCE;
 
 /**
  * A plugin implementation providing shared tasks among plugins related to classic modding
@@ -188,6 +188,19 @@ public abstract class BasePlugin implements Plugin<Project> {
             });
         });
 
+        TaskProvider<OutputtingJavaExec> createFrg2SrcMappings = tasks.register("createFrg2SrcMappings", OutputtingJavaExec.class, task -> {
+            task.classpath(deobfToolsJarFile);
+            task.setOutputFilename("frg2src.frg");
+            task.getMainClass().set("de.heisluft.reveng.Remapper");
+        });
+
+        TaskProvider<JavaExec> renamePatches = tasks.register("renamePatches", JavaExec.class, task -> {
+            task.getOutputs().upToDateWhen(t -> !createFrg2SrcMappings.get().getDidWork());
+            task.dependsOn(createFrg2SrcMappings);
+            task.classpath(deobfToolsJarFile);
+            task.getMainClass().set("de.heisluft.reveng.SrcLevelRemapper");
+        });
+
         TaskProvider<Patcher> applyCompilerPatches = tasks.register("applyCompilerPatches", Patcher.class, task -> {
             task.getInput().set(extractSrc.get().getOutput());
             // This cant be a lambda because Gradle will shit itself otherwise
@@ -238,6 +251,7 @@ public abstract class BasePlugin implements Plugin<Project> {
         });
 
         tasks.register("genPatches", Differ.class, task -> {
+            task.onlyIf(t -> t.getProject().getExtensions().getByType(ClassicMCExt.class).getMappingType().equals(FERGIE));
             task.dependsOn(copySrc);
             task.getModifiedSrcDir().set(mcSourceSet.getJava().getSrcDirs().iterator().next());
         });
@@ -291,8 +305,15 @@ public abstract class BasePlugin implements Plugin<Project> {
                 System.out.println();
             }
             System.out.println("    DONE");
+
+
             project1.getDependencies()
                     .add("mcImplementation", "com.mojang:minecraft-assets:" + version);
+
+            tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> {
+                        if (ext.getByType(ClassicMCExt.class).getMappingType().equals(SOURCE)) task.dependsOn(renamePatches);
+            });
+
             genBSLRun.configure(task -> {
                 List<String> startModules = Arrays.asList("asm-", "bootstraplauncher-", "securejarhandler-");
                 task.getJvmArgs().add(task.getProject().getConfigurations().getByName("runtimeClasspath").getResolvedConfiguration()
