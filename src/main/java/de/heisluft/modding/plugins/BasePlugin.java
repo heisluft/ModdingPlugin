@@ -334,17 +334,12 @@ public abstract class BasePlugin implements Plugin<Project> {
             cmd.add(cp);
             cmd.add(main);
             for (Object arg : args) cmd.add(arg.toString());
-            Process p = new ProcessBuilder(cmd).start();
-            InputStream is = p.getInputStream();
-            InputStream es = p.getErrorStream();
-            byte[] buf = new byte[512];
-            while (p.isAlive()) {
-                int read = is.read(buf);
-                if(read > 0) System.out.write(buf, 0, read);
-                read = es.read(buf);
-                if(read > 0) System.err.write(buf, 0, read);
-            }
+            Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
             int eV = p.waitFor();
+            byte[] buf = new byte[512];
+            InputStream is = p.getInputStream();
+            int read;
+            while((read = is.read(buf)) != -1) System.out.write(buf, 0, read);
             if(eV != 0) throw new RuntimeException("Command '" + String.join(" ", cmd) + "' finished with nonzero exit value " + eV);
         } catch (InterruptedException | IOException e) {
             throw new RuntimeException(e);
