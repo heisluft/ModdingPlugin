@@ -69,27 +69,43 @@ public class JarModDevPlugin extends BasePlugin {
       task.getMainClass().set("de.heisluft.reveng.Remapper");
     });
 
-    TaskProvider<OutputtingJavaExec> applyAts = tasks.register("applyAts", OutputtingJavaExec.class, task -> {
+    TaskProvider<Zip2ZipCopy> stripLibs = tasks.register("stripLibraries", Zip2ZipCopy.class, task -> {
       task.dependsOn(remapJar);
+      task.getInput().set(remapJar.get().getOutput());
+      task.getOutput().set(new File(project.getBuildDir(), task.getName() + File.separator + "minecraft.jar"));
+      task.getIncludedPaths().addAll(Arrays.asList("util/**", "com/**", "net/**"));
+    });
+
+    TaskProvider<OutputtingJavaExec> applyAts = tasks.register("applyAts", OutputtingJavaExec.class, task -> {
+      File inFile = new File(extractData.get().getOutput().getAsFile().get(), "at.cfg");
+      task.onlyIf(t -> inFile.exists());
+      task.dependsOn(stripLibs);
       task.classpath(deobfToolsJarFile);
       task.setOutputFilename("minecraft.jar");
       task.getMainClass().set("de.heisluft.reveng.at.ATApplicator");
       task.args(
-              remapJar.get().getOutput().get(),
-              new File(extractData.get().getOutput().getAsFile().get(), "at.cfg"),
+              stripLibs.get().getOutput().get(),
+              inFile,
               task.getOutput().get()
       );
+      // This cant be a lambda because Gradle will shit itself otherwise
+      //noinspection Convert2Lambda
+      task.doLast(new Action<Task>() {
+        @Override
+        public void execute(@Nonnull Task t) {
+          t.getProject().getTasks().withType(OutputtingJavaExec.class).getByName("decompMC", task -> {
+            task.args(
+                ((OutputtingJavaExec)t).getOutput().get(),
+                task.getOutput().get().getAsFile().getParentFile()
+            );
+          });
+        }
+      });
     });
 
-    TaskProvider<Zip2ZipCopy> stripLibs = tasks.register("stripLibraries", Zip2ZipCopy.class, task -> {
-      task.dependsOn(applyAts);
-      task.getInput().set(applyAts.get().getOutput());
-      task.getOutput().set(new File(project.getBuildDir(), task.getName() + File.separator + "minecraft.jar"));
-      task.getIncludedPaths().addAll(Arrays.asList("util/**", "com/**"));
-    });
 
     tasks.withType(OutputtingJavaExec.class).getByName("decompMC", task -> {
-      task.dependsOn(stripLibs);
+      task.dependsOn(applyAts);
       task.args(
               stripLibs.get().getOutput().get(),
               task.getOutput().get().getAsFile().getParentFile()
