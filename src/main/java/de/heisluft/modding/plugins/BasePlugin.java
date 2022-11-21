@@ -141,11 +141,9 @@ public abstract class BasePlugin implements Plugin<Project> {
         // minecraftforge.net hosts bsl, sjh and modlauncher
         project.getRepositories().maven(repo -> repo.setUrl("https://maven.minecraftforge.net/"));
         DependencyHandler d = project.getDependencies();
-        // MCs dependencies. it shall be noted that j-ogg is only used on classic c0.0.16+ and
-        // is replaced with paulscode in later indev? versions.
+        // LWJGL
         d.add("mcImplementation", "org.lwjgl.lwjgl:lwjgl:2.9.3");
         d.add("mcImplementation", "org.lwjgl.lwjgl:lwjgl_util:2.9.3");
-        d.add("mcImplementation", "de.jarnbjo:j-ogg-mc:1.0.1");
         // ModLauncher and its dependencies
         d.add("implementation", "cpw.mods:modlauncher:10.0.8");
         d.add("implementation", "cpw.mods:bootstraplauncher:1.1.2");
@@ -309,6 +307,13 @@ public abstract class BasePlugin implements Plugin<Project> {
 
             project1.getDependencies()
                     .add("mcImplementation", "com.mojang:minecraft-assets:" + version);
+            // JOGG. it shall be noted that jarnbjo is only used from classic c0.0.16+ to c0.30
+            // It is replaced with jcraft starting indev versions from 2010
+            if(!version.startsWith("in"))
+                project1.getDependencies().add("mcImplementation", "de.jarnbjo:j-ogg-mc:1.0.1");
+            else if(!version.substring(version.indexOf('-') + 1).startsWith("2009"))
+                project1.getDependencies().add("mcImplementation", "com.jcraft:jorbis:0.0.17");
+
 
             tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> {
                         if (ext.getByType(ClassicMCExt.class).getMappingType().equals(SOURCE)) task.dependsOn(renamePatches);

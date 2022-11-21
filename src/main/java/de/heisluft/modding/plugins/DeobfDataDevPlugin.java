@@ -6,6 +6,7 @@ import de.heisluft.modding.tasks.Differ;
 import de.heisluft.modding.tasks.Extract;
 import de.heisluft.modding.tasks.OutputtingJavaExec;
 import de.heisluft.modding.tasks.Patcher;
+import de.heisluft.modding.tasks.Zip2ZipCopy;
 import de.heisluft.modding.util.Util;
 import org.gradle.api.Action;
 import org.gradle.api.Project;
@@ -109,11 +110,18 @@ public class DeobfDataDevPlugin extends BasePlugin {
             task.getMainClass().set("de.heisluft.reveng.Remapper");
         });
 
-        tasks.withType(OutputtingJavaExec.class).getByName("decompMC", task -> {
+        TaskProvider<Zip2ZipCopy> stripLibs = tasks.register("stripLibraries", Zip2ZipCopy.class, task -> {
             task.dependsOn(remapJar);
+            task.getInput().set(remapJar.get().getOutput());
             task.getOutputs().upToDateWhen(t -> !remapJar.get().getDidWork());
+            task.getOutput().set(new File(project.getBuildDir(), task.getName() + File.separator + "minecraft.jar"));
+            task.getIncludedPaths().addAll(Arrays.asList("util/**", "com/mojang/**", "net/minecraft/**"));
+        });
+
+        tasks.withType(OutputtingJavaExec.class).getByName("decompMC", task -> {
+            task.dependsOn(stripLibs);
             task.args(
-                    remapJar.get().getOutput().get(),
+                    stripLibs.get().getOutput().get(),
                     task.getOutput().get().getAsFile().getParentFile()
             );
         });

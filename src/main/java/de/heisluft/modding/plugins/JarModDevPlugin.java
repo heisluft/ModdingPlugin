@@ -73,7 +73,7 @@ public class JarModDevPlugin extends BasePlugin {
       task.dependsOn(remapJar);
       task.getInput().set(remapJar.get().getOutput());
       task.getOutput().set(new File(project.getBuildDir(), task.getName() + File.separator + "minecraft.jar"));
-      task.getIncludedPaths().addAll(Arrays.asList("util/**", "com/**", "net/**"));
+      task.getIncludedPaths().addAll(Arrays.asList("util/**", "com/mojang/**", "net/minecraft/**"));
     });
 
     TaskProvider<OutputtingJavaExec> applyAts = tasks.register("applyAts", OutputtingJavaExec.class, task -> {
