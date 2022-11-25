@@ -25,9 +25,9 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.stream.Stream;
 
-import static de.heisluft.modding.extensions.ClassicMCExt.FERGIE;
 import static de.heisluft.modding.extensions.ClassicMCExt.SOURCE;
 
+//TODO Validate Up-to-date policies
 public class DeobfDataDevPlugin extends BasePlugin {
     @Override
     public void apply(Project project) {
@@ -116,6 +116,18 @@ public class DeobfDataDevPlugin extends BasePlugin {
             task.getOutputs().upToDateWhen(t -> !remapJar.get().getDidWork());
             task.getOutput().set(new File(project.getBuildDir(), task.getName() + File.separator + "minecraft.jar"));
             task.getIncludedPaths().addAll(Arrays.asList("util/**", "com/mojang/**", "net/minecraft/**"));
+            // This cant be a lambda because Gradle will shit itself otherwise
+            //noinspection Convert2Lambda
+            task.doFirst(new Action<Task>() { // If work needs to be done, we have to first purge the output
+                @Override
+                public void execute(@Nonnull Task task) {
+                    try {
+                        Util.deleteContents(((Zip2ZipCopy)task).getOutput().getAsFile().get());
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                }
+            });
         });
 
         tasks.withType(OutputtingJavaExec.class).getByName("decompMC", task -> {

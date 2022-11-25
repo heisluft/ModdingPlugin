@@ -11,6 +11,8 @@ import org.gradle.api.Action;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
+import org.gradle.api.artifacts.ResolvedArtifact;
+import org.gradle.api.artifacts.ResolvedConfiguration;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.file.DuplicatesStrategy;
 import org.gradle.api.plugins.ExtensionContainer;
@@ -304,16 +306,18 @@ public abstract class BasePlugin implements Plugin<Project> {
             }
             System.out.println("    DONE");
 
-
-            project1.getDependencies()
-                    .add("mcImplementation", "com.mojang:minecraft-assets:" + version);
+            DependencyHandler dh = project1.getDependencies();
+            dh.add("mcImplementation", "com.mojang:minecraft-assets:" + version);
             // JOGG. it shall be noted that jarnbjo is only used from classic c0.0.16+ to c0.30
             // It is replaced with jcraft starting indev versions from 2010
-            if(!version.startsWith("in"))
-                project1.getDependencies().add("mcImplementation", "de.jarnbjo:j-ogg-mc:1.0.1");
-            else if(!version.substring(version.indexOf('-') + 1).startsWith("2009"))
-                project1.getDependencies().add("mcImplementation", "com.jcraft:jorbis:0.0.17");
-
+            if(!version.startsWith("in")) dh.add("mcImplementation", "de.jarnbjo:j-ogg-mc:1.0.1");
+            else if(!version.substring(version.indexOf('-') + 1).startsWith("2009")) {
+                dh.add("mcImplementation", "com.paulscode:Paulscode-SoundSystem:1.0.1");
+                dh.add("mcImplementation", "com.paulscode:CodecWav:1.0.1");
+                dh.add("mcImplementation", "com.paulscode:CodecJOrbis:1.0.3");
+                dh.add("mcImplementation", "com.paulscode:LibraryLWJGLOpenAL:1.0.1");
+                dh.add("mcImplementation", "com.paulscode:LibraryJavaSound:1.0.1");
+            }
 
             tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> {
                         if (ext.getByType(ClassicMCExt.class).getMappingType().equals(SOURCE)) task.dependsOn(renamePatches);
@@ -321,11 +325,18 @@ public abstract class BasePlugin implements Plugin<Project> {
 
             genBSLRun.configure(task -> {
                 List<String> startModules = Arrays.asList("asm-", "bootstraplauncher-", "securejarhandler-");
-                task.getJvmArgs().add(task.getProject().getConfigurations().getByName("runtimeClasspath").getResolvedConfiguration()
+                ResolvedConfiguration cfg = task.getProject().getConfigurations().getByName("runtimeClasspath").getResolvedConfiguration();
+                task.getJvmArgs().add(cfg
                         .getFiles().stream()
                         .filter(f -> startModules.stream().anyMatch(f.getName()::startsWith))
                         .map(File::getAbsolutePath)
                         .collect(Collectors.joining(File.pathSeparator, "-p ", "")));
+                if(version.startsWith("in-2010")) {
+                    task.getJvmArgs().add(cfg.getResolvedArtifacts().stream()
+                        .filter(ra -> ra.toString().contains(" (com.paulscode:"))
+                        .map(ResolvedArtifact::getFile).map(File::getName)
+                        .collect(Collectors.joining(",","-DmergeModules=","")));
+                }
                 task.getAppArgs().add("--version=" + version);
             });
         });
