@@ -5,7 +5,7 @@ plugins {
 }
 
 group 'de.heisluft.modding'
-version '0.2.2-pre+25'
+version '0.2.2-pre+28'
 
 sourceCompatibility = targetCompatibility = JavaVersion.VERSION_1_8
 

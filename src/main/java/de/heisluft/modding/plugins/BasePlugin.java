@@ -153,7 +153,7 @@ public abstract class BasePlugin implements Plugin<Project> {
         // This jopt-simple version is patched to contain an Auto-Module-Name within its Manifest
         d.add("implementation", "net.sf.jopt-simple:jopt-simple:5.0.5");
         // Log4j, manually upgraded
-        d.add("implementation", "org.apache.logging.log4j:log4j-core:2.18.0");
+        d.add("implementation", "org.apache.logging.log4j:log4j-core:2.19.0");
         // For Log4j ANSI support within IntelliJ and on Windows
         d.add("runtimeOnly", "org.fusesource.jansi:jansi:2.4.0");
         // register the mcVersion extension

@@ -122,7 +122,7 @@ public class DeobfDataDevPlugin extends BasePlugin {
                 @Override
                 public void execute(@Nonnull Task task) {
                     try {
-                        Util.deleteContents(((Zip2ZipCopy)task).getOutput().getAsFile().get());
+                        Files.deleteIfExists(((Zip2ZipCopy)task).getOutput().getAsFile().get().toPath());
                     } catch (IOException e) {
                         throw new UncheckedIOException(e);
                     }
@@ -132,6 +132,7 @@ public class DeobfDataDevPlugin extends BasePlugin {
 
         tasks.withType(OutputtingJavaExec.class).getByName("decompMC", task -> {
             task.dependsOn(stripLibs);
+            task.getOutputs().upToDateWhen(t -> !stripLibs.get().getDidWork());
             task.args(
                     stripLibs.get().getOutput().get(),
                     task.getOutput().get().getAsFile().getParentFile()
