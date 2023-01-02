@@ -14,11 +14,14 @@ import java.io.UncheckedIOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public abstract class Zip2ZipCopy extends DefaultTask {
 
@@ -41,18 +44,25 @@ public abstract class Zip2ZipCopy extends DefaultTask {
 
   public static void doExec(File in, File out, List<String> includePatterns) throws IOException {
     Set<Predicate<Path>> patterns = includePatterns.stream().map(Util::parsePattern).collect(Collectors.toSet());
-    try(FileSystem inFs = Util.createFS(in, false); FileSystem outFs = Util.createFS(out, true)) {
-      Files.walk(inFs.getPath("/")).filter(path -> patterns.isEmpty() || patterns.stream().anyMatch(p -> p.test(path))).forEach(path -> {
-        Path dest = outFs.getPath(path.toString());
+    Files.copy(in.toPath(), out.toPath(), StandardCopyOption.REPLACE_EXISTING);
+    try(FileSystem outFs = Util.createFS(out, true); Stream<Path> stream = Files.walk(outFs.getPath("/"))) {
+      stream.sorted(Comparator.reverseOrder()).filter(path -> !path.toString().equals("/") && !patterns.isEmpty() && patterns.stream().noneMatch(p -> p.test(path))).forEach(path -> {
         try {
-          Files.createDirectories(dest.getParent());
-          Files.copy(path, dest);
-        } catch(IOException ex){
-          throw new UncheckedIOException(ex);
+          if(Files.isRegularFile(path)) {
+            System.out.println("deleting " + path);
+            Files.delete(path);
+            return;
+          }
+          if(!Files.list(path).findAny().isPresent()) {
+            System.out.println("deleting " + path);
+            Files.delete(path);
+          }
+        } catch (IOException e) {
+          throw new UncheckedIOException(e);
         }
       });
     } catch(UncheckedIOException e) {
-      throw e.getCause();
+      throw new IOException(e.getCause());
     }
   }
 
