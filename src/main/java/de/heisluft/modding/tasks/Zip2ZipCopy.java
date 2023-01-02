@@ -46,7 +46,7 @@ public abstract class Zip2ZipCopy extends DefaultTask {
     Set<Predicate<Path>> patterns = includePatterns.stream().map(Util::parsePattern).collect(Collectors.toSet());
     Files.copy(in.toPath(), out.toPath(), StandardCopyOption.REPLACE_EXISTING);
     try(FileSystem outFs = Util.createFS(out, true); Stream<Path> stream = Files.walk(outFs.getPath("/"))) {
-      stream.sorted(Comparator.reverseOrder()).filter(path -> !path.toString().equals("/") && !patterns.isEmpty() && patterns.stream().noneMatch(p -> p.test(path))).forEach(path -> {
+      stream.sorted(Comparator.reverseOrder()).filter(path -> !path.toString().equals("/") && (patterns.isEmpty() || patterns.stream().noneMatch(p -> p.test(path)))).forEach(path -> {
         try {
           if(Files.isRegularFile(path)) {
             System.out.println("deleting " + path);
