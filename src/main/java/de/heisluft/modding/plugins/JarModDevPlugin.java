@@ -14,11 +14,11 @@ import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
-import java.util.Arrays;
 
 import static de.heisluft.modding.extensions.ClassicMCExt.SOURCE;
 
 //TODO: Either rename ATs or Rename Jar twice
+//TODO: Fix, for now this plugin is not usable.
 public class JarModDevPlugin extends BasePlugin {
 
   @Override
@@ -69,22 +69,15 @@ public class JarModDevPlugin extends BasePlugin {
       task.getMainClass().set("de.heisluft.reveng.Remapper");
     });
 
-    TaskProvider<Zip2ZipCopy> stripLibs = tasks.register("stripLibraries", Zip2ZipCopy.class, task -> {
-      task.dependsOn(remapJar);
-      task.getInput().set(remapJar.get().getOutput());
-      task.getOutput().set(new File(project.getBuildDir(), task.getName() + File.separator + "minecraft.jar"));
-      task.getIncludedPaths().addAll(Arrays.asList("util/**", "com/mojang/**", "net/minecraft/**"));
-    });
-
     TaskProvider<OutputtingJavaExec> applyAts = tasks.register("applyAts", OutputtingJavaExec.class, task -> {
       File inFile = new File(extractData.get().getOutput().getAsFile().get(), "at.cfg");
       task.onlyIf(t -> inFile.exists());
-      task.dependsOn(stripLibs);
+      //task.dependsOn(stripLibs);
       task.classpath(deobfToolsJarFile);
       task.setOutputFilename("minecraft.jar");
       task.getMainClass().set("de.heisluft.reveng.at.ATApplicator");
       task.args(
-              stripLibs.get().getOutput().get(),
+              //stripLibs.get().getOutput().get(),
               inFile,
               task.getOutput().get()
       );
@@ -107,7 +100,7 @@ public class JarModDevPlugin extends BasePlugin {
     tasks.withType(OutputtingJavaExec.class).getByName("decompMC", task -> {
       task.dependsOn(applyAts);
       task.args(
-              stripLibs.get().getOutput().get(),
+              //stripLibs.get().getOutput().get(),
               task.getOutput().get().getAsFile().getParentFile()
       );
     });
@@ -127,7 +120,7 @@ public class JarModDevPlugin extends BasePlugin {
         Directory mappingsDir = extractData.get().getOutput().get();
         task.args(
                 "remap",
-                ctorFixedMC,
+                //ctorFixedMC,
                 (srcRemapping ? mappingsDir.file("src.frg") : mappingsDir.file("fergie.frg")),
                 "-o",
                 task.getOutput().get().getAsFile().getAbsolutePath()

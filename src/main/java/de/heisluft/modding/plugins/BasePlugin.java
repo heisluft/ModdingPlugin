@@ -19,22 +19,18 @@ import org.gradle.api.plugins.ExtensionContainer;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.provider.ListProperty;
-import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.*;
 import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
-import org.gradle.jvm.toolchain.JavaLauncher;
 import org.gradle.jvm.toolchain.JavaToolchainService;
 import org.gradle.jvm.toolchain.JavaToolchainSpec;
 
 import javax.annotation.Nonnull;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -68,10 +64,6 @@ public abstract class BasePlugin implements Plugin<Project> {
      * The location of the deobf tools jar
      */
     protected File deobfToolsJarFile;
-    /**
-     * The location of the constructor-fixed jar
-     */
-    protected Path ctorFixedMC;
 
     /**
      * @inheritDoc
@@ -83,36 +75,20 @@ public abstract class BasePlugin implements Plugin<Project> {
         System.out.println("Plugin version: " + Constants.VERSION);
 
         File buildDir = project.getBuildDir();
-        //Need to init this early, some tasks seem to be eagerly evaluated. TODO: Find out why or ditch task structure altogether.
-        ctorFixedMC = buildDir.toPath().resolve("restoreMeta/minecraft-ctor-fix.jar");
 
-        System.out.println("Version independent setup tasks running: ");
-        System.out.println("  downloadDeobfTools:");
+        System.out.println("Auto-downloading DeobfTools...");
         File deobfToolsDir = new File(buildDir, "downloadDeobfTools");
-        File fernFlowerJarFile;
         deobfToolsDir.mkdirs();
         try {
             MavenDownload.manualDownload(
                     REPO_URL,
-                    new SimpleArtifactIdentifier("de.heisluft.reveng", "RevEng", "latest", "all", null),
-                    deobfToolsJarFile = new File(deobfToolsDir, "RevEng.jar")
+                    new SimpleArtifactIdentifier("de.heisluft.deobf.tooling", "DeobfTools", "latest", "all", null),
+                    deobfToolsJarFile = new File(deobfToolsDir, "DeobfTools.jar")
             );
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-        System.out.println("    DONE \n  downloadFernFlower:");
-        File ffDir = new File(buildDir, "downloadFernFlower");
-        ffDir.mkdirs();
-        try {
-            MavenDownload.manualDownload(
-                    REPO_URL,
-                    new SimpleArtifactIdentifier("com.jetbrains", "FernFlower", "latest", null, null),
-                    fernFlowerJarFile = new File(ffDir, "FernFlower.jar")
-            );
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        System.out.println("    DONE\nVersion independent setup tasks COMPLETE");
+        System.out.println("DONE");
 
         MCRepo.init(project.getGradle(), REPO_URL);
         // Java Plugin needs to be applied first as we want to configure it
@@ -122,7 +98,7 @@ public abstract class BasePlugin implements Plugin<Project> {
         // Use java 16, needed for modlauncher.
         javaExt.toolchain(versionOf(16));
         mcSourceSet = javaExt.getSourceSets().maybeCreate("mc");
-        // We dont want things like modlauncher to be available to the mc source code
+        // We don't want things like modlauncher to be available to the mc source code
         // so implementation will not cover that
         project.getConfigurations().getByName("implementation").setExtendsFrom(Collections.singleton(project.getConfigurations().getByName("mcImplementation")));
         project.getTasks().withType(JavaCompile.class).forEach(javaCompile -> {
@@ -159,13 +135,38 @@ public abstract class BasePlugin implements Plugin<Project> {
         // register the mcVersion extension
         project.getExtensions().create("classicMC", ClassicMCExt.class);
 
-        // TODO: try to merge as many tasks from subprojects into base plugins
+        // TODO: try to merge remapATs, remapJar and applyAts into base plugin
         // setup shared tasks
         TaskContainer tasks = project.getTasks();
 
-        TaskProvider<OutputtingJavaExec> decompMC = tasks.register("decompMC", OutputtingJavaExec.class, task -> {
+        TaskProvider<FetchMCTask> fetchMC = tasks.register("fetchMC", FetchMCTask.class);
+
+        TaskProvider<Zip2ZipCopy> stripLibraries = tasks.register("stripLibraries", Zip2ZipCopy.class, task -> {
+            task.getInput().set(fetchMC.get().getOutput());
+            task.getIncludedPaths().add("net/minecraft/**");
+            task.getIncludedPaths().add("a/**");
+        });
+
+        tasks.register("restoreMeta", OutputtingJavaExec.class, task -> {
             task.setOutputFilename("minecraft.jar");
-            task.classpath(fernFlowerJarFile);
+            task.dependsOn(stripLibraries);
+            task.classpath(deobfToolsJarFile);
+            task.getMainClass().set("de.heisluft.deobf.tooling.binfix.BinFixer");
+            task.getJavaLauncher().set(project.getExtensions().getByType(JavaToolchainService.class).launcherFor(v -> v.getLanguageVersion().set(JavaLanguageVersion.of(8))));
+            task.args(stripLibraries.get().getOutput().getAsFile().get().getAbsolutePath(), task.getOutput().getAsFile().get().getAbsolutePath());
+        });
+
+        TaskProvider<MavenDownload> downloadFernFlower = tasks.register("downloadFernFlower", MavenDownload.class, task -> {
+            task.getMavenRepoUrl().set(REPO_URL);
+            task.getGroupName().set("com.jetbrains");
+            task.getArtifactName().set("FernFlower");
+            task.getOutput().set(new File(project.getBuildDir(), task.getName() + "/fernflower.jar"));
+        });
+
+        TaskProvider<OutputtingJavaExec> decompMC = tasks.register("decompMC", OutputtingJavaExec.class, task -> {
+            task.dependsOn(downloadFernFlower);
+            task.setOutputFilename("minecraft.jar");
+            task.classpath(downloadFernFlower.get().getOutput());
             task.getMainClass().set("org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler");
             task.setMaxHeapSize("4G");
             task.getJavaLauncher().set(project.getExtensions().getByType(JavaToolchainService.class).launcherFor(v -> v.getLanguageVersion().set(JavaLanguageVersion.of(11))));
@@ -191,14 +192,14 @@ public abstract class BasePlugin implements Plugin<Project> {
         TaskProvider<OutputtingJavaExec> createFrg2SrcMappings = tasks.register("createFrg2SrcMappings", OutputtingJavaExec.class, task -> {
             task.classpath(deobfToolsJarFile);
             task.setOutputFilename("frg2src.frg");
-            task.getMainClass().set("de.heisluft.reveng.Remapper");
+            task.getMainClass().set("de.heisluft.deobf.tooling.Remapper");
         });
 
         TaskProvider<JavaExec> renamePatches = tasks.register("renamePatches", JavaExec.class, task -> {
             task.getOutputs().upToDateWhen(t -> !createFrg2SrcMappings.get().getDidWork());
             task.dependsOn(createFrg2SrcMappings);
             task.classpath(deobfToolsJarFile);
-            task.getMainClass().set("de.heisluft.reveng.SrcLevelRemapper");
+            task.getMainClass().set("de.heisluft.deobf.tooling.SrcLevelRemapper");
         });
 
         TaskProvider<Patcher> applyCompilerPatches = tasks.register("applyCompilerPatches", Patcher.class, task -> {
@@ -223,7 +224,7 @@ public abstract class BasePlugin implements Plugin<Project> {
             task.from(applyCompilerPatches.get().getOutput());
             task.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE);
             task.onlyIf(t -> {
-                try(Stream<Path> s = Files.walk(task.getDestinationDir().toPath(), 1)) {
+                try(Stream<Path> s = Files.list(task.getDestinationDir().toPath())) {
                     return !s.findAny().isPresent();
                 } catch (IOException exception) {
                     return false;
@@ -235,6 +236,7 @@ public abstract class BasePlugin implements Plugin<Project> {
             task.dependsOn(applyCompilerPatches);
             task.into(mcSourceSet.getJava().getSrcDirs().iterator().next());
             task.from(applyCompilerPatches.get().getOutput());
+            task.getOutputs().upToDateWhen(task1 -> false);
             task.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE);
             // This cant be a lambda because Gradle will shit itself otherwise
             //noinspection Convert2Lambda
@@ -281,35 +283,12 @@ public abstract class BasePlugin implements Plugin<Project> {
 
             ExtensionContainer ext = project1.getExtensions();
             String version = ext.getByType(ClassicMCExt.class).getVersion().get();
-            Provider<JavaLauncher> jCMD = ext.getByType(JavaToolchainService.class).launcherFor(ext.getByType(JavaPluginExtension.class).getToolchain());
-
-            System.out.println("Version dependent setup tasks running: ");
-            System.out.println("  Fetch MC jar:");
-            Path mcJarPath;
-            Path restoreMetaBase = project1.getBuildDir().toPath().resolve("restoreMeta");
-            try {
-                mcJarPath = MCRepo.getInstance().resolve("minecraft", version);
-                Files.createDirectories(restoreMetaBase);
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-            System.out.println("    DONE\n  Resurrect Metadata:");
-            Path temp = restoreMetaBase.resolve("minecraft-inners-restored.jar");
-            if(Files.notExists(temp) || Files.notExists(ctorFixedMC)) System.out.println();
-            if(Files.notExists(temp)) {
-                launchProcess(jCMD, deobfToolsJarFile.getAbsolutePath(), "de.heisluft.reveng.nests.InnerClassDetector", mcJarPath, temp);
-                System.out.println();
-            }
-            if(Files.notExists(ctorFixedMC)) {
-                launchProcess(jCMD, deobfToolsJarFile.getAbsolutePath(), "de.heisluft.reveng.ConstructorFixer", temp, ctorFixedMC);
-                System.out.println();
-            }
-            System.out.println("    DONE");
 
             DependencyHandler dh = project1.getDependencies();
             dh.add("mcImplementation", "com.mojang:minecraft-assets:" + version);
-            // JOGG. it shall be noted that jarnbjo is only used from classic c0.0.16+ to c0.30
-            // It is replaced with jcraft starting indev versions from 2010
+            // Sound dependencies. Jogg is only used from classic c0.0.16+ to c0.30,
+            // however, classic versioning is a mess, so we include it in all classic versions
+            // It is replaced with paulscode starting indev versions from 2010
             if(!version.startsWith("in")) dh.add("mcImplementation", "de.jarnbjo:j-ogg-mc:1.0.1");
             else if(!version.substring(version.indexOf('-') + 1).startsWith("2009")) {
                 dh.add("mcImplementation", "com.paulscode:Paulscode-SoundSystem:1.0.1");
@@ -319,8 +298,10 @@ public abstract class BasePlugin implements Plugin<Project> {
                 dh.add("mcImplementation", "com.paulscode:LibraryJavaSound:1.0.1");
             }
 
+            tasks.withType(FetchMCTask.class).getByName("fetchMC", t -> t.getMCVersion().set(version));
+
             tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> {
-                        if (ext.getByType(ClassicMCExt.class).getMappingType().equals(SOURCE)) task.dependsOn(renamePatches);
+                if (ext.getByType(ClassicMCExt.class).getMappingType().equals(SOURCE)) task.dependsOn(renamePatches);
             });
 
             genBSLRun.configure(task -> {
@@ -340,25 +321,5 @@ public abstract class BasePlugin implements Plugin<Project> {
                 task.getAppArgs().add("--version=" + version);
             });
         });
-    }
-
-    static void launchProcess(Provider<JavaLauncher> jExec, String cp, String main, Object... args) {
-        try {
-            List<String> cmd = new ArrayList<>(args.length + 4);
-            cmd.add(jExec.get().getExecutablePath().getAsFile().getAbsolutePath());
-            cmd.add("-cp");
-            cmd.add(cp);
-            cmd.add(main);
-            for (Object arg : args) cmd.add(arg.toString());
-            Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
-            int eV = p.waitFor();
-            byte[] buf = new byte[512];
-            InputStream is = p.getInputStream();
-            int read;
-            while((read = is.read(buf)) != -1) System.out.write(buf, 0, read);
-            if(eV != 0) throw new RuntimeException("Command '" + String.join(" ", cmd) + "' finished with nonzero exit value " + eV);
-        } catch (InterruptedException | IOException e) {
-            throw new RuntimeException(e);
-        }
     }
 }

@@ -1,7 +1,6 @@
 package de.heisluft.modding.plugins;
 
 import de.heisluft.modding.extensions.ClassicMCExt;
-import de.heisluft.modding.extensions.DeobfDataExt;
 import de.heisluft.modding.tasks.Differ;
 import de.heisluft.modding.tasks.Extract;
 import de.heisluft.modding.tasks.OutputtingJavaExec;
@@ -22,17 +21,16 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.stream.Stream;
 
 import static de.heisluft.modding.extensions.ClassicMCExt.SOURCE;
 
-//TODO Validate Up-to-date policies
 public class DeobfDataDevPlugin extends BasePlugin {
     @Override
     public void apply(Project project) {
         super.apply(project);
-        project.getExtensions().create("deobfData", DeobfDataExt.class);
 
         TaskContainer tasks = project.getTasks();
 
@@ -43,8 +41,16 @@ public class DeobfDataDevPlugin extends BasePlugin {
         Path frgChecksumFile = deobfWorkspaceDir.resolve("fergie.sha512");
         Path srcMappingsFile = deobfWorkspaceDir.resolve("src.frg");
         Path srcChecksumFile = deobfWorkspaceDir.resolve("src.sha512");
+        Path atFile = deobfWorkspaceDir.resolve("at.cfg");
+        Path atChecksumFile = deobfWorkspaceDir.resolve("at.sha512");
         Path patchesDir = deobfWorkspaceDir.resolve("patches");
         Path renamedPatchesDir = project.getBuildDir().toPath().resolve("renamePatches");
+
+        OutputtingJavaExec restoreMeta = tasks.withType(OutputtingJavaExec.class).getByName("restoreMeta", task -> {
+            List<String> args = task.getArgs();
+            args.add(new File(project.getBuildDir(), task.getName() + "/mappings.frg").getAbsolutePath());
+            task.setArgs(args);
+        });
 
         try {
             Files.createDirectories(patchesDir);
@@ -54,25 +60,41 @@ public class DeobfDataDevPlugin extends BasePlugin {
         }
 
         TaskProvider<OutputtingJavaExec> genATs = tasks.register("genATs", OutputtingJavaExec.class, task -> {
+            task.dependsOn(restoreMeta);
             task.classpath(deobfToolsJarFile);
             task.setOutputFilename("at.cfg");
-            task.getMainClass().set("de.heisluft.reveng.ATGenerator");
+            task.getMainClass().set("de.heisluft.deobf.tooling.at.ATGenerator");
             task.args(
-                    ctorFixedMC,
+                    restoreMeta.getOutput().get().getAsFile().getAbsolutePath(),
                     task.getOutput().get().getAsFile().getAbsolutePath()
             );
+            // This cant be a lambda because Gradle will shit itself otherwise
+            //noinspection Convert2Lambda
+            task.doLast("copyToMainDir", new Action<Task>() {
+                @Override
+                public void execute(@Nonnull Task t) {
+                    try {
+                        if (!Files.isRegularFile(atFile)) {
+                            Files.copy(task.getOutput().get().getAsFile().toPath(), atFile);
+                            Files.write(atChecksumFile, Util.SHA_512.digest(Files.readAllBytes(atFile)));
+                        }
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+            });
         });
 
         TaskProvider<OutputtingJavaExec> applyATs = tasks.register("applyATs", OutputtingJavaExec.class, task -> {
-            File inFile = genATs.get().getOutput().get().getAsFile();
-            task.onlyIf(t -> inFile.exists());
             task.dependsOn(genATs);
+            task.getOutputs().upToDateWhen(t -> validateChecksumUpdating(atFile, atChecksumFile));
+            task.onlyIf(t -> Files.isRegularFile(atFile));
             task.classpath(deobfToolsJarFile);
             task.setOutputFilename("minecraft.jar");
-            task.getMainClass().set("de.heisluft.reveng.at.ATApplicator");
+            task.getMainClass().set("de.heisluft.deobf.tooling.at.ATApplicator");
             task.args(
-                    ctorFixedMC,
-                    inFile.getAbsolutePath(),
+                    restoreMeta.getOutput().get().getAsFile().getAbsolutePath(),
+                    atFile.toAbsolutePath(),
                     task.getOutput().get().getAsFile().getAbsolutePath()
             );
         });
@@ -80,11 +102,13 @@ public class DeobfDataDevPlugin extends BasePlugin {
         TaskProvider<OutputtingJavaExec> genMappings = tasks.register("genMappings", OutputtingJavaExec.class, task -> {
             task.classpath(deobfToolsJarFile);
             task.setOutputFilename("mappings-generated.frg");
-            task.getMainClass().set("de.heisluft.reveng.Remapper");
+            task.getMainClass().set("de.heisluft.deobf.tooling.Remapper");
             task.args(
                     "map",
-                    ctorFixedMC,
-                    task.getOutput().get().getAsFile().getAbsolutePath()
+                    restoreMeta.getOutput().get().getAsFile().getAbsolutePath(),
+                    task.getOutput().get().getAsFile().getAbsolutePath(),
+                    "-s",
+                    new File(project.getBuildDir(), restoreMeta.getName() + "/mappings.frg").getAbsolutePath()
             );
             // This cant be a lambda because Gradle will shit itself otherwise
             //noinspection Convert2Lambda
@@ -107,15 +131,15 @@ public class DeobfDataDevPlugin extends BasePlugin {
             task.dependsOn(applyATs);
             task.classpath(deobfToolsJarFile);
             task.setOutputFilename("minecraft.jar");
-            task.getMainClass().set("de.heisluft.reveng.Remapper");
+            task.getMainClass().set("de.heisluft.deobf.tooling.Remapper");
         });
 
-        TaskProvider<Zip2ZipCopy> stripLibs = tasks.register("stripLibraries", Zip2ZipCopy.class, task -> {
+        TaskProvider<Zip2ZipCopy> stripClassicLibs = tasks.register("stripClassicLibraries", Zip2ZipCopy.class, task -> {
             task.dependsOn(remapJar);
             task.getInput().set(remapJar.get().getOutput());
             task.getOutputs().upToDateWhen(t -> !remapJar.get().getDidWork());
             task.getOutput().set(new File(project.getBuildDir(), task.getName() + File.separator + "minecraft.jar"));
-            task.getIncludedPaths().addAll(Arrays.asList("util/**", "com/mojang/**", "net/minecraft/**"));
+            task.getIncludedPaths().addAll(Arrays.asList("a/**", "com/mojang/**"));
             // This cant be a lambda because Gradle will shit itself otherwise
             //noinspection Convert2Lambda
             task.doFirst(new Action<Task>() { // If work needs to be done, we have to first purge the output
@@ -131,20 +155,32 @@ public class DeobfDataDevPlugin extends BasePlugin {
         });
 
         tasks.withType(OutputtingJavaExec.class).getByName("decompMC", task -> {
-            task.dependsOn(stripLibs);
-            task.getOutputs().upToDateWhen(t -> !stripLibs.get().getDidWork());
+            task.dependsOn(stripClassicLibs);
+            task.getOutputs().upToDateWhen(t -> !stripClassicLibs.get().getDidWork());
             task.args(
-                    stripLibs.get().getOutput().get(),
-                    task.getOutput().get().getAsFile().getParentFile()
+                    stripClassicLibs.get().getOutput().get().getAsFile().getAbsolutePath(),
+                    task.getOutput().get().getAsFile().getParentFile().getAbsolutePath()
             );
         });
 
-        OutputtingJavaExec createFrg2SrcMappings  = tasks.withType(OutputtingJavaExec.class).getByName("createFrg2SrcMappings", task -> {
-            task.getOutputs().upToDateWhen(t -> validateChecksumUpdating(frgMappingsFile, frgChecksumFile) && validateChecksumUpdating(srcMappingsFile, srcChecksumFile));
-            task.args("genMediatorMappings", frgMappingsFile, srcMappingsFile, "-o", task.getOutput().get());
+        OutputtingJavaExec createFrg2SrcMappings = tasks.withType(OutputtingJavaExec.class).getByName("createFrg2SrcMappings", task -> {
+            task.getOutputs().upToDateWhen(t ->
+                validateChecksumUpdating(frgMappingsFile, frgChecksumFile) && validateChecksumUpdating(srcMappingsFile, srcChecksumFile)
+            );
+            task.args(
+                "genMediatorMappings",
+                frgMappingsFile.toAbsolutePath(),
+                srcMappingsFile.toAbsolutePath(),
+                "-o",
+                task.getOutput().get().getAsFile().getAbsolutePath()
+            );
         });
 
-        tasks.withType(JavaExec.class).getByName("renamePatches", task -> task.args(patchesDir, createFrg2SrcMappings.getOutput().get(), renamedPatchesDir));
+        tasks.withType(JavaExec.class).getByName("renamePatches", task -> task.args(
+            patchesDir.toAbsolutePath(),
+            createFrg2SrcMappings.getOutput().get().getAsFile().getAbsolutePath(),
+            renamedPatchesDir.toAbsolutePath())
+        );
 
         tasks.withType(Differ.class).getByName("genPatches", task -> {
 
@@ -170,8 +206,6 @@ public class DeobfDataDevPlugin extends BasePlugin {
             task.getBackupSrcDir().set(((Extract) tasks.getByName("extractSrc")).getOutput());
         });
 
-
-
         project.afterEvaluate(project1 -> {
             boolean srcRemapping = Objects.equals(project1.getExtensions().getByType(ClassicMCExt.class).getMappingType(), SOURCE);
 
@@ -186,6 +220,11 @@ public class DeobfDataDevPlugin extends BasePlugin {
                 }
             }
 
+            // Classic jars had their dependencies obfuscated, so we have to remap them, this is not the case for JarModDev, as there, the mappings already exist
+            if(!project1.getExtensions().getByType(ClassicMCExt.class).getVersion().get().startsWith("in"))
+                tasks.withType(Zip2ZipCopy.class).getByName("stripLibraries", t -> t.getIncludedPaths().add("**"));
+            else tasks.withType(Zip2ZipCopy.class).getByName("stripClassicLibraries", t -> t.getIncludedPaths().add("**"));
+
             tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> task.getPatchDir().set((srcRemapping ? renamedPatchesDir : patchesDir).toFile()));
 
             remapJar.configure(task -> {
@@ -193,7 +232,7 @@ public class DeobfDataDevPlugin extends BasePlugin {
                 task.getOutputs().upToDateWhen(t -> srcRemapping ? validateChecksumUpdating(srcMappingsFile, srcChecksumFile) : validateChecksumUpdating(frgMappingsFile, frgChecksumFile));
                 task.args(
                         "remap",
-                        genATs.get().getOutput().get().getAsFile().exists() ? applyATs.get().getOutput() : ctorFixedMC,
+                        (genATs.get().getOutput().get().getAsFile().exists() ? applyATs.get().getOutput() : restoreMeta.getOutput()).get().getAsFile().getAbsolutePath(),
                         (srcRemapping ? srcMappingsFile : frgMappingsFile).toAbsolutePath(),
                         "-o",
                         task.getOutput().get().getAsFile().getAbsolutePath()

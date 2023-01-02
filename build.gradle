@@ -5,7 +5,7 @@ plugins {
 }
 
 group 'de.heisluft.modding'
-version '0.2.2-pre+28'
+version '0.3.0-pre17'
 
 sourceCompatibility = targetCompatibility = JavaVersion.VERSION_1_8
 
@@ -28,10 +28,10 @@ dependencies {
 }
 
 gradlePlugin{
-  plugins.create('jarModDevPlugin') {
+  /*plugins.create('jarModDevPlugin') {
     id = 'de.heisluft.modding.classic.jarmoddev'
     implementationClass = 'de.heisluft.modding.plugins.JarModDevPlugin'
-  }
+  }*/
   plugins.create('deobfDataDevPlugin') {
     id = 'de.heisluft.modding.classic.deobfdatadev'
     implementationClass = 'de.heisluft.modding.plugins.DeobfDataDevPlugin'
