@@ -95,8 +95,8 @@ public abstract class BasePlugin implements Plugin<Project> {
         project.getPluginManager().apply(JavaPlugin.class);
         JavaPluginExtension javaExt = project.getExtensions().getByType(JavaPluginExtension.class);
         JavaToolchainService service = project.getExtensions().getByType(JavaToolchainService.class);
-        // Use java 16, needed for modlauncher.
-        javaExt.toolchain(versionOf(16));
+        // Use java 21, needed for modlauncher.
+        javaExt.toolchain(versionOf(21));
         mcSourceSet = javaExt.getSourceSets().maybeCreate("mc");
         // We don't want things like modlauncher to be available to the mc source code
         // so implementation will not cover that
@@ -122,14 +122,11 @@ public abstract class BasePlugin implements Plugin<Project> {
         // LWJGL
         d.add("mcImplementation", "org.lwjgl.lwjgl:lwjgl:2.9.3");
         d.add("mcImplementation", "org.lwjgl.lwjgl:lwjgl_util:2.9.3");
-        // ModLauncher and its dependencies
-        d.add("implementation", "cpw.mods:modlauncher:10.0.8");
-        d.add("implementation", "cpw.mods:bootstraplauncher:1.1.2");
-        d.add("implementation", "cpw.mods:securejarhandler:2.1.4");
+        // ModLauncher and BSL
+        d.add("implementation", "cpw.mods:modlauncher:11.0.2");
+        d.add("implementation", "cpw.mods:bootstraplauncher:2.0.2");
         // This jopt-simple version is patched to contain an Auto-Module-Name within its Manifest
         d.add("implementation", "net.sf.jopt-simple:jopt-simple:5.0.5");
-        // Log4j, manually upgraded
-        d.add("implementation", "org.apache.logging.log4j:log4j-core:2.19.0");
         // For Log4j ANSI support within IntelliJ and on Windows
         d.add("runtimeOnly", "org.fusesource.jansi:jansi:2.4.0");
         // register the mcVersion extension
