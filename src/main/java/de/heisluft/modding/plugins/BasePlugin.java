@@ -117,7 +117,7 @@ public abstract class BasePlugin implements Plugin<Project> {
         // heisluft.de hosts jopt-simple with auto-module-name and JOgg
         project.getRepositories().maven(repo -> repo.setUrl("https://heisluft.de/maven/"));
         // minecraftforge.net hosts bsl, sjh and modlauncher
-        project.getRepositories().maven(repo -> repo.setUrl("https://maven.minecraftforge.net/"));
+        project.getRepositories().maven(repo -> repo.setUrl("https://maven.neoforged.net/"));
         DependencyHandler d = project.getDependencies();
         // LWJGL
         d.add("mcImplementation", "org.lwjgl.lwjgl:lwjgl:2.9.3");
