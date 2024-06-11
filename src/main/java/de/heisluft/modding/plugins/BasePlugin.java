@@ -183,6 +183,7 @@ public abstract class BasePlugin implements Plugin<Project> {
         });
 
         TaskProvider<OutputtingJavaExec> createFrg2SrcMappings = tasks.register("createFrg2SrcMappings", OutputtingJavaExec.class, task -> {
+            task.onlyIf(task1 -> project.getExtensions().getByType(ClassicMCExt.class).getMappingType().equals(SOURCE));
             task.classpath(deobfToolsJarFile);
             task.setOutputFilename("frg2src.frg");
             task.getMainClass().set("de.heisluft.deobf.tooling.Remapper");
@@ -212,13 +213,13 @@ public abstract class BasePlugin implements Plugin<Project> {
 
         TaskProvider<OutputtingJavaExec> decompMC = tasks.register("decompMC", OutputtingJavaExec.class, task -> {
             task.dependsOn(downloadFernFlower, remapJarSrc);
-            task.setOutputFilename("minecraft-remapped-frg.jar");
+            task.setOutputFilename("minecraft-mapped-fergie.jar");
             task.classpath(downloadFernFlower.get().getOutput());
             task.getMainClass().set("org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler");
             task.setMaxHeapSize("4G");
             task.getJavaLauncher().set(project.getExtensions().getByType(JavaToolchainService.class).launcherFor(v -> v.getLanguageVersion().set(JavaLanguageVersion.of(11))));
             task.args(
-                remapJarSrc.get().getOutput().get().getAsFile().getAbsolutePath(),
+                remapJarFrg.get().getOutput().get().getAsFile().getAbsolutePath(),
                 task.getOutput().get().getAsFile().getParentFile().getAbsolutePath()
             );
         });

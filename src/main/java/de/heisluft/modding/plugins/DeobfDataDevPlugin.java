@@ -115,7 +115,7 @@ public class DeobfDataDevPlugin extends BasePlugin {
             });
         });
 
-      tasks.withType(RemapTask.class).getByName("renameJarFrg", task -> {
+      tasks.withType(RemapTask.class).getByName("remapJarFrg", task -> {
         task.dependsOn(genMappings);
         task.getMappings().set(frgMappingsFile.toFile());
       });
@@ -186,7 +186,8 @@ public class DeobfDataDevPlugin extends BasePlugin {
             // Classic jars had their dependencies obfuscated, so we have to remap them, this is not the case for JarModDev, as there, the mappings already exist
             if(!project1.getExtensions().getByType(ClassicMCExt.class).getVersion().get().startsWith("in"))
                 tasks.withType(Zip2ZipCopy.class).getByName("stripLibraries", t -> t.getIncludedPaths().add("**"));
-            else tasks.withType(Zip2ZipCopy.class).getByName("stripClassicLibraries", t -> t.getIncludedPaths().add("**"));
+            // TODO: add stripClassicLibraries back
+            //else tasks.withType(Zip2ZipCopy.class).getByName("stripClassicLibraries", t -> t.getIncludedPaths().add("**"));
 
             tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> task.getPatchDir().set((srcRemapping ? renamedPatchesDir : patchesDir).toFile()));
         });

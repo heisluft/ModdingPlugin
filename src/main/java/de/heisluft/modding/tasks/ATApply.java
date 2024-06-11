@@ -8,10 +8,7 @@ import org.gradle.api.tasks.TaskAction;
 public abstract class ATApply extends OutputtingJavaExec {
 
   public ATApply() {
-    onlyIf(t -> {
-      System.out.println("called");
-      return this.getATFile().isPresent() && this.getATFile().get().getAsFile().exists();
-    });
+    onlyIf(t -> this.getATFile().isPresent() && this.getATFile().get().getAsFile().exists());
     getMainClass().set("de.heisluft.reveng.at.ATApplicator");
     setOutputFilename("minecraft-at.jar");
   }
