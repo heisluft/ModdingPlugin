@@ -15,6 +15,7 @@ import org.gradle.api.artifacts.ResolvedConfiguration;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.file.DuplicatesStrategy;
 import org.gradle.api.file.RegularFile;
+import org.gradle.api.internal.AbstractTask;
 import org.gradle.api.plugins.ExtensionContainer;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
@@ -24,6 +25,7 @@ import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
 import org.gradle.jvm.toolchain.JavaToolchainService;
 import org.gradle.jvm.toolchain.JavaToolchainSpec;
+import org.jetbrains.annotations.NotNull;
 
 import javax.annotation.Nonnull;
 import java.io.File;
@@ -211,6 +213,9 @@ public abstract class BasePlugin implements Plugin<Project> {
             });
         });
 
+        //TODO: Caching: UP-TO-DATE if the task outputs used for it are utd:
+        // If in SRC phase: remapJarSrc
+        // Else If Ats applied: applyAts, Else: remapJarSrc
         TaskProvider<OutputtingJavaExec> decompMC = tasks.register("decompMC", OutputtingJavaExec.class, task -> {
             task.dependsOn(downloadFernFlower, remapJarSrc);
             task.setOutputFilename("minecraft-mapped-fergie.jar");
@@ -222,6 +227,19 @@ public abstract class BasePlugin implements Plugin<Project> {
                 remapJarFrg.get().getOutput().get().getAsFile().getAbsolutePath(),
                 task.getOutput().get().getAsFile().getParentFile().getAbsolutePath()
             );
+
+            // This cant be a lambda because Gradle will shit itself otherwise
+            //noinspection Convert2Lambda
+            task.doFirst(new Action<Task>() {
+                @Override
+                public void execute(@Nonnull Task task) {
+                    try {
+                        Util.deleteContents(new File(task.getProject().getBuildDir(), task.getName()));
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                }
+            });
         });
 
         TaskProvider<Extract> extractSrc = tasks.register("extractSrc", Extract.class, task -> {
