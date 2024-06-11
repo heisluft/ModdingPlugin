@@ -1,6 +1,5 @@
 package de.heisluft.modding.plugins;
 
-import de.heisluft.modding.Constants;
 import de.heisluft.modding.extensions.ClassicMCExt;
 import de.heisluft.modding.repo.MCRepo;
 import de.heisluft.modding.repo.ResourceRepo;
@@ -15,6 +14,7 @@ import org.gradle.api.artifacts.ResolvedArtifact;
 import org.gradle.api.artifacts.ResolvedConfiguration;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.file.DuplicatesStrategy;
+import org.gradle.api.file.RegularFile;
 import org.gradle.api.plugins.ExtensionContainer;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
@@ -72,8 +72,6 @@ public abstract class BasePlugin implements Plugin<Project> {
      */
     @Override
     public void apply(Project project) {
-        System.out.println("Plugin version: " + Constants.VERSION);
-
         File buildDir = project.getBuildDir();
 
         System.out.println("Auto-downloading DeobfTools...");
@@ -125,6 +123,7 @@ public abstract class BasePlugin implements Plugin<Project> {
         // ModLauncher and BSL
         d.add("implementation", "cpw.mods:modlauncher:11.0.2");
         d.add("implementation", "cpw.mods:bootstraplauncher:2.0.2");
+        d.add("implementation", "cpw.mods:securejarhandler:3.0.7");
         // This jopt-simple version is patched to contain an Auto-Module-Name within its Manifest
         d.add("implementation", "net.sf.jopt-simple:jopt-simple:5.0.5");
         // For Log4j ANSI support within IntelliJ and on Windows
@@ -132,25 +131,48 @@ public abstract class BasePlugin implements Plugin<Project> {
         // register the mcVersion extension
         project.getExtensions().create("classicMC", ClassicMCExt.class);
 
-        // TODO: try to merge remapATs, remapJar and applyAts into base plugin
         // setup shared tasks
         TaskContainer tasks = project.getTasks();
 
-        TaskProvider<FetchMCTask> fetchMC = tasks.register("fetchMC", FetchMCTask.class);
+        tasks.getByName("classes").dependsOn(tasks.getByName(mcSourceSet.getClassesTaskName()));
 
         TaskProvider<Zip2ZipCopy> stripLibraries = tasks.register("stripLibraries", Zip2ZipCopy.class, task -> {
-            task.getInput().set(fetchMC.get().getOutput());
             task.getIncludedPaths().add("net/minecraft/**");
             task.getIncludedPaths().add("a/**");
         });
 
-        tasks.register("restoreMeta", OutputtingJavaExec.class, task -> {
+        TaskProvider<OutputtingJavaExec> restoreMeta = tasks.register("restoreMeta", OutputtingJavaExec.class, task -> {
             task.setOutputFilename("minecraft.jar");
             task.dependsOn(stripLibraries);
             task.classpath(deobfToolsJarFile);
             task.getMainClass().set("de.heisluft.deobf.tooling.binfix.BinFixer");
             task.getJavaLauncher().set(project.getExtensions().getByType(JavaToolchainService.class).launcherFor(v -> v.getLanguageVersion().set(JavaLanguageVersion.of(8))));
             task.args(stripLibraries.get().getOutput().getAsFile().get().getAbsolutePath(), task.getOutput().getAsFile().get().getAbsolutePath());
+        });
+
+        TaskProvider<RemapTask> remapJarFrg = tasks.register("remapJarFrg", RemapTask.class, task -> {
+            task.classpath(deobfToolsJarFile);
+            task.getInput().set(restoreMeta.get().getOutput());
+            task.setOutputFilename("minecraft-mapped-fergie.jar");
+        });
+
+        TaskProvider<ATApply> applyAts = tasks.register("applyAts", ATApply.class, task -> {
+            task.classpath(deobfToolsJarFile);
+            task.getInput().set(remapJarFrg.get().getOutput());
+            // This cant be a lambda because Gradle will shit itself otherwise
+            //noinspection Convert2Lambda
+            task.doLast(new Action<Task>() {
+                @Override
+                public void execute(@Nonnull Task t) {
+                    RegularFile out = ((OutputtingJavaExec) t).getOutput().get();
+                    TaskContainer tc = t.getProject().getTasks();
+                    tc.withType(OutputtingJavaExec.class).getByName("decompMC", task -> {
+                        task.setOutputFilename("minecraft-at.jar");
+                        task.args(out, task.getOutput().get().getAsFile().getParentFile());
+                    });
+                    tc.withType(RemapTask.class).getByName("stripObfLibs", task -> task.getInput().set(out));
+                }
+            });
         });
 
         TaskProvider<MavenDownload> downloadFernFlower = tasks.register("downloadFernFlower", MavenDownload.class, task -> {
@@ -160,13 +182,45 @@ public abstract class BasePlugin implements Plugin<Project> {
             task.getOutput().set(new File(project.getBuildDir(), task.getName() + "/fernflower.jar"));
         });
 
+        TaskProvider<OutputtingJavaExec> createFrg2SrcMappings = tasks.register("createFrg2SrcMappings", OutputtingJavaExec.class, task -> {
+            task.classpath(deobfToolsJarFile);
+            task.setOutputFilename("frg2src.frg");
+            task.getMainClass().set("de.heisluft.deobf.tooling.Remapper");
+        });
+
+        TaskProvider<RemapTask> remapJarSrc = tasks.register("remapJarSrc", RemapTask.class, task -> {
+            task.dependsOn(applyAts);
+            task.onlyIf(task1 -> project.getExtensions().getByType(ClassicMCExt.class).getMappingType().equals(SOURCE));
+            task.classpath(deobfToolsJarFile);
+            task.getInput().set(remapJarFrg.get().getOutput());
+            task.getMappings().set(createFrg2SrcMappings.get().getOutput());
+            task.setOutputFilename("minecraft-remapped-src.jar");
+            // This cant be a lambda because Gradle will shit itself otherwise
+            //noinspection Convert2Lambda
+            task.doLast(new Action<Task>() {
+                @Override
+                public void execute(@Nonnull Task t) {
+                    RegularFile out = ((OutputtingJavaExec) t).getOutput().get();
+                    TaskContainer tc = t.getProject().getTasks();
+                    tc.withType(OutputtingJavaExec.class).getByName("decompMC", task -> {
+                        task.args(out, task.getOutput().get().getAsFile().getParentFile());
+                        task.setOutputFilename("minecraft-remapped-src.jar");
+                    });
+                }
+            });
+        });
+
         TaskProvider<OutputtingJavaExec> decompMC = tasks.register("decompMC", OutputtingJavaExec.class, task -> {
-            task.dependsOn(downloadFernFlower);
-            task.setOutputFilename("minecraft.jar");
+            task.dependsOn(downloadFernFlower, remapJarSrc);
+            task.setOutputFilename("minecraft-remapped-frg.jar");
             task.classpath(downloadFernFlower.get().getOutput());
             task.getMainClass().set("org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler");
             task.setMaxHeapSize("4G");
             task.getJavaLauncher().set(project.getExtensions().getByType(JavaToolchainService.class).launcherFor(v -> v.getLanguageVersion().set(JavaLanguageVersion.of(11))));
+            task.args(
+                remapJarSrc.get().getOutput().get().getAsFile().getAbsolutePath(),
+                task.getOutput().get().getAsFile().getParentFile().getAbsolutePath()
+            );
         });
 
         TaskProvider<Extract> extractSrc = tasks.register("extractSrc", Extract.class, task -> {
@@ -184,12 +238,6 @@ public abstract class BasePlugin implements Plugin<Project> {
                     }
                 }
             });
-        });
-
-        TaskProvider<OutputtingJavaExec> createFrg2SrcMappings = tasks.register("createFrg2SrcMappings", OutputtingJavaExec.class, task -> {
-            task.classpath(deobfToolsJarFile);
-            task.setOutputFilename("frg2src.frg");
-            task.getMainClass().set("de.heisluft.deobf.tooling.Remapper");
         });
 
         TaskProvider<JavaExec> renamePatches = tasks.register("renamePatches", JavaExec.class, task -> {
@@ -221,8 +269,14 @@ public abstract class BasePlugin implements Plugin<Project> {
             task.from(applyCompilerPatches.get().getOutput());
             task.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE);
             task.onlyIf(t -> {
-                try(Stream<Path> s = Files.list(task.getDestinationDir().toPath())) {
-                    return !s.findAny().isPresent();
+                Path mcsd = task.getDestinationDir().toPath();
+                if(!Files.isDirectory(mcsd)) try {
+                    Files.createDirectories(mcsd);
+                } catch(IOException e) {
+                    return false;
+                }
+                try(Stream<Path> s = Files.walk(mcsd)) {
+                    return s.noneMatch(Files::isRegularFile);
                 } catch (IOException exception) {
                     return false;
                 }
@@ -280,6 +334,13 @@ public abstract class BasePlugin implements Plugin<Project> {
 
             ExtensionContainer ext = project1.getExtensions();
             String version = ext.getByType(ClassicMCExt.class).getVersion().get();
+            stripLibraries.configure(t -> {
+              try {
+                t.getInput().set(MCRepo.getInstance().resolve("minecraft", version).toFile());
+              } catch(IOException e) {
+                throw new RuntimeException(e);
+              }
+            });
 
             DependencyHandler dh = project1.getDependencies();
             dh.add("mcImplementation", "com.mojang:minecraft-assets:" + version);
@@ -294,8 +355,6 @@ public abstract class BasePlugin implements Plugin<Project> {
                 dh.add("mcImplementation", "com.paulscode:LibraryLWJGLOpenAL:1.0.1");
                 dh.add("mcImplementation", "com.paulscode:LibraryJavaSound:1.0.1");
             }
-
-            tasks.withType(FetchMCTask.class).getByName("fetchMC", t -> t.getMCVersion().set(version));
 
             tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> {
                 if (ext.getByType(ClassicMCExt.class).getMappingType().equals(SOURCE)) task.dependsOn(renamePatches);

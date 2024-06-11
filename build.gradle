@@ -5,7 +5,7 @@ plugins {
 }
 
 group 'de.heisluft.modding'
-version '0.3.0-pre+30'
+version '0.3.0-pre+50'
 
 sourceCompatibility = targetCompatibility = JavaVersion.VERSION_1_8
 
@@ -27,26 +27,14 @@ dependencies {
 }
 
 gradlePlugin{
-  /*plugins.create('jarModDevPlugin') {
+  plugins.create('jarModDevPlugin') {
     id = 'de.heisluft.modding.classic.jarmoddev'
     implementationClass = 'de.heisluft.modding.plugins.JarModDevPlugin'
-  }*/
+  }
   plugins.create('deobfDataDevPlugin') {
     id = 'de.heisluft.modding.classic.deobfdatadev'
     implementationClass = 'de.heisluft.modding.plugins.DeobfDataDevPlugin'
   }
-}
-
-// The below is needed so we automatically generate a Constants.java file dynamically *before* we import the project
-sourceSets.main.java.srcDir "$buildDir/generated/java"
-file("$buildDir/generated/java/de/heisluft/modding").mkdirs()
-file("$buildDir/generated/java/de/heisluft/modding/Constants.java").newWriter().withWriter {
-  w -> w << "package $group;\n\n" +
-      "/** Auto-Generated Class containing the plugin version. */\n" +
-      "public final class Constants {\n" +
-      "  /** The plugin version */\n" +
-      "  public static final String VERSION = \"$version\";\n" +
-      "}"
 }
 
 tasks.withType(JavaCompile) {

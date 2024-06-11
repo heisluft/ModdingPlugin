@@ -10,15 +10,12 @@ import org.gradle.api.file.Directory;
 import org.gradle.api.tasks.*;
 
 import javax.annotation.Nonnull;
-import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
 
 import static de.heisluft.modding.extensions.ClassicMCExt.SOURCE;
 
-//TODO: Either rename ATs or Rename Jar twice
-//TODO: Fix, for now this plugin is not usable.
 public class JarModDevPlugin extends BasePlugin {
 
   @Override
@@ -28,8 +25,6 @@ public class JarModDevPlugin extends BasePlugin {
     Path renamedPatchesDir = project.getBuildDir().toPath().resolve("renamePatches");
 
     TaskContainer tasks = project.getTasks();
-
-    tasks.getByName("classes").dependsOn(tasks.getByName(mcSourceSet.getClassesTaskName()));
 
     TaskProvider<MavenDownload> downloadDeobfData = tasks.register("downloadDeobfData", MavenDownload.class, task -> {
       task.getGroupName().set("de.heisluft.deobf.data");
@@ -62,48 +57,11 @@ public class JarModDevPlugin extends BasePlugin {
 
     tasks.withType(JavaExec.class).getByName("renamePatches", task -> task.args(extractData.get().getOutput().get().dir("patches"), createFrg2SrcMappings.getOutput().get(), renamedPatchesDir));
 
-    TaskProvider<OutputtingJavaExec> remapJar = tasks.register("remapJar", OutputtingJavaExec.class, task -> {
+    tasks.withType(RemapTask.class).getByName("remapJarFrg", task -> {
       task.dependsOn(extractData);
-      task.classpath(deobfToolsJarFile);
-      task.setOutputFilename("minecraft.jar");
-      task.getMainClass().set("de.heisluft.reveng.Remapper");
+      task.getMappings().set(extractData.get().getOutput().get().file("fergie.frg"));
     });
-
-    TaskProvider<OutputtingJavaExec> applyAts = tasks.register("applyAts", OutputtingJavaExec.class, task -> {
-      File inFile = new File(extractData.get().getOutput().getAsFile().get(), "at.cfg");
-      task.onlyIf(t -> inFile.exists());
-      //task.dependsOn(stripLibs);
-      task.classpath(deobfToolsJarFile);
-      task.setOutputFilename("minecraft.jar");
-      task.getMainClass().set("de.heisluft.reveng.at.ATApplicator");
-      task.args(
-              //stripLibs.get().getOutput().get(),
-              inFile,
-              task.getOutput().get()
-      );
-      // This cant be a lambda because Gradle will shit itself otherwise
-      //noinspection Convert2Lambda
-      task.doLast(new Action<Task>() {
-        @Override
-        public void execute(@Nonnull Task t) {
-          t.getProject().getTasks().withType(OutputtingJavaExec.class).getByName("decompMC", task -> {
-            task.args(
-                ((OutputtingJavaExec)t).getOutput().get(),
-                task.getOutput().get().getAsFile().getParentFile()
-            );
-          });
-        }
-      });
-    });
-
-
-    tasks.withType(OutputtingJavaExec.class).getByName("decompMC", task -> {
-      task.dependsOn(applyAts);
-      task.args(
-              //stripLibs.get().getOutput().get(),
-              task.getOutput().get().getAsFile().getParentFile()
-      );
-    });
+    tasks.withType(ATApply.class).getByName("applyAts", task -> task.getATFile().set(extractData.get().getOutput().get().file("at.cfg")));
 
     Patcher applyCompilerPatches = tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> {
       task.getPatchDir().set(extractData.get().getOutput().dir("patches"));
@@ -113,19 +71,7 @@ public class JarModDevPlugin extends BasePlugin {
 
     project.afterEvaluate(project1 -> {
       boolean srcRemapping = project1.getExtensions().getByType(ClassicMCExt.class).getMappingType().equals(SOURCE);
-
       tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> task.getPatchDir().set(srcRemapping ? renamedPatchesDir.toFile() : extractData.get().getOutput().get().dir("patches").getAsFile()));
-
-      remapJar.configure(task -> {
-        Directory mappingsDir = extractData.get().getOutput().get();
-        task.args(
-                "remap",
-                //ctorFixedMC,
-                (srcRemapping ? mappingsDir.file("src.frg") : mappingsDir.file("fergie.frg")),
-                "-o",
-                task.getOutput().get().getAsFile().getAbsolutePath()
-        );
-      });
     });
   }
 }

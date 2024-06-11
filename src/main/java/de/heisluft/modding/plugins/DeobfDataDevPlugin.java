@@ -1,10 +1,12 @@
 package de.heisluft.modding.plugins;
 
 import de.heisluft.modding.extensions.ClassicMCExt;
+import de.heisluft.modding.tasks.ATApply;
 import de.heisluft.modding.tasks.Differ;
 import de.heisluft.modding.tasks.Extract;
 import de.heisluft.modding.tasks.OutputtingJavaExec;
 import de.heisluft.modding.tasks.Patcher;
+import de.heisluft.modding.tasks.RemapTask;
 import de.heisluft.modding.tasks.Zip2ZipCopy;
 import de.heisluft.modding.util.Util;
 import org.gradle.api.Action;
@@ -59,46 +61,6 @@ public class DeobfDataDevPlugin extends BasePlugin {
             throw new UncheckedIOException(e);
         }
 
-        TaskProvider<OutputtingJavaExec> genATs = tasks.register("genATs", OutputtingJavaExec.class, task -> {
-            task.dependsOn(restoreMeta);
-            task.classpath(deobfToolsJarFile);
-            task.setOutputFilename("at.cfg");
-            task.getMainClass().set("de.heisluft.deobf.tooling.at.ATGenerator");
-            task.args(
-                    restoreMeta.getOutput().get().getAsFile().getAbsolutePath(),
-                    task.getOutput().get().getAsFile().getAbsolutePath()
-            );
-            // This cant be a lambda because Gradle will shit itself otherwise
-            //noinspection Convert2Lambda
-            task.doLast("copyToMainDir", new Action<Task>() {
-                @Override
-                public void execute(@Nonnull Task t) {
-                    try {
-                        if (!Files.isRegularFile(atFile)) {
-                            Files.copy(task.getOutput().get().getAsFile().toPath(), atFile);
-                            Files.write(atChecksumFile, Util.SHA_512.digest(Files.readAllBytes(atFile)));
-                        }
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-            });
-        });
-
-        TaskProvider<OutputtingJavaExec> applyATs = tasks.register("applyATs", OutputtingJavaExec.class, task -> {
-            task.dependsOn(genATs);
-            task.getOutputs().upToDateWhen(t -> validateChecksumUpdating(atFile, atChecksumFile));
-            task.onlyIf(t -> Files.isRegularFile(atFile));
-            task.classpath(deobfToolsJarFile);
-            task.setOutputFilename("minecraft.jar");
-            task.getMainClass().set("de.heisluft.deobf.tooling.at.ATApplicator");
-            task.args(
-                    restoreMeta.getOutput().get().getAsFile().getAbsolutePath(),
-                    atFile.toAbsolutePath(),
-                    task.getOutput().get().getAsFile().getAbsolutePath()
-            );
-        });
-
         TaskProvider<OutputtingJavaExec> genMappings = tasks.register("genMappings", OutputtingJavaExec.class, task -> {
             task.classpath(deobfToolsJarFile);
             task.setOutputFilename("mappings-generated.frg");
@@ -127,40 +89,41 @@ public class DeobfDataDevPlugin extends BasePlugin {
             });
         });
 
-        TaskProvider<OutputtingJavaExec> remapJar = tasks.register("remapJar", OutputtingJavaExec.class, task -> {
-            task.dependsOn(applyATs);
+        TaskProvider<OutputtingJavaExec> genATs = tasks.register("genATs", OutputtingJavaExec.class, task -> {
+            task.dependsOn(restoreMeta);
             task.classpath(deobfToolsJarFile);
-            task.setOutputFilename("minecraft.jar");
-            task.getMainClass().set("de.heisluft.deobf.tooling.Remapper");
-        });
-
-        TaskProvider<Zip2ZipCopy> stripClassicLibs = tasks.register("stripClassicLibraries", Zip2ZipCopy.class, task -> {
-            task.dependsOn(remapJar);
-            task.getInput().set(remapJar.get().getOutput());
-            task.getOutputs().upToDateWhen(t -> !remapJar.get().getDidWork());
-            task.getOutput().set(new File(project.getBuildDir(), task.getName() + File.separator + "minecraft.jar"));
-            task.getIncludedPaths().addAll(Arrays.asList("a/**", "com/mojang/**"));
+            task.setOutputFilename("at.cfg");
+            task.getMainClass().set("de.heisluft.deobf.tooling.at.ATGenerator");
+            task.args(
+                restoreMeta.getOutput().get().getAsFile().getAbsolutePath(),
+                task.getOutput().get().getAsFile().getAbsolutePath()
+            );
             // This cant be a lambda because Gradle will shit itself otherwise
             //noinspection Convert2Lambda
-            task.doFirst(new Action<Task>() { // If work needs to be done, we have to first purge the output
+            task.doLast("copyToMainDir", new Action<Task>() {
                 @Override
-                public void execute(@Nonnull Task task) {
+                public void execute(@Nonnull Task t) {
                     try {
-                        Files.deleteIfExists(((Zip2ZipCopy)task).getOutput().getAsFile().get().toPath());
+                        if (!Files.isRegularFile(atFile) && task.getOutput().get().getAsFile().exists()) {
+                            Files.copy(task.getOutput().get().getAsFile().toPath(), atFile);
+                            Files.write(atChecksumFile, Util.SHA_512.digest(Files.readAllBytes(atFile)));
+                        }
                     } catch (IOException e) {
-                        throw new UncheckedIOException(e);
+                        throw new RuntimeException(e);
                     }
                 }
             });
         });
 
-        tasks.withType(OutputtingJavaExec.class).getByName("decompMC", task -> {
-            task.dependsOn(stripClassicLibs);
-            task.getOutputs().upToDateWhen(t -> !stripClassicLibs.get().getDidWork());
-            task.args(
-                    stripClassicLibs.get().getOutput().get().getAsFile().getAbsolutePath(),
-                    task.getOutput().get().getAsFile().getParentFile().getAbsolutePath()
-            );
+      tasks.withType(RemapTask.class).getByName("renameJarFrg", task -> {
+        task.dependsOn(genMappings);
+        task.getMappings().set(frgMappingsFile.toFile());
+      });
+
+      tasks.withType(ATApply.class).getByName("applyAts", task -> {
+            task.dependsOn(genATs);
+            task.getOutputs().upToDateWhen(t -> validateChecksumUpdating(atFile, atChecksumFile));
+            task.getATFile().set(atFile.toFile());
         });
 
         OutputtingJavaExec createFrg2SrcMappings = tasks.withType(OutputtingJavaExec.class).getByName("createFrg2SrcMappings", task -> {
@@ -226,18 +189,6 @@ public class DeobfDataDevPlugin extends BasePlugin {
             else tasks.withType(Zip2ZipCopy.class).getByName("stripClassicLibraries", t -> t.getIncludedPaths().add("**"));
 
             tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> task.getPatchDir().set((srcRemapping ? renamedPatchesDir : patchesDir).toFile()));
-
-            remapJar.configure(task -> {
-                if(!srcRemapping) task.dependsOn(genMappings);
-                task.getOutputs().upToDateWhen(t -> srcRemapping ? validateChecksumUpdating(srcMappingsFile, srcChecksumFile) : validateChecksumUpdating(frgMappingsFile, frgChecksumFile));
-                task.args(
-                        "remap",
-                        (genATs.get().getOutput().get().getAsFile().exists() ? applyATs.get().getOutput() : restoreMeta.getOutput()).get().getAsFile().getAbsolutePath(),
-                        (srcRemapping ? srcMappingsFile : frgMappingsFile).toAbsolutePath(),
-                        "-o",
-                        task.getOutput().get().getAsFile().getAbsolutePath()
-                );
-            });
         });
     }
 
