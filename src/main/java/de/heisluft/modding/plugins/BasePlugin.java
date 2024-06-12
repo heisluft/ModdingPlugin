@@ -15,7 +15,6 @@ import org.gradle.api.artifacts.ResolvedConfiguration;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.file.DuplicatesStrategy;
 import org.gradle.api.file.RegularFile;
-import org.gradle.api.internal.AbstractTask;
 import org.gradle.api.plugins.ExtensionContainer;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
@@ -25,7 +24,6 @@ import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
 import org.gradle.jvm.toolchain.JavaToolchainService;
 import org.gradle.jvm.toolchain.JavaToolchainSpec;
-import org.jetbrains.annotations.NotNull;
 
 import javax.annotation.Nonnull;
 import java.io.File;
@@ -172,7 +170,7 @@ public abstract class BasePlugin implements Plugin<Project> {
                         task.setOutputFilename("minecraft-at.jar");
                         task.args(out, task.getOutput().get().getAsFile().getParentFile());
                     });
-                    tc.withType(RemapTask.class).getByName("stripObfLibs", task -> task.getInput().set(out));
+                    tc.withType(RemapTask.class).getByName("remapJarSrc", task -> task.getInput().set(out));
                 }
             });
         });
@@ -192,7 +190,7 @@ public abstract class BasePlugin implements Plugin<Project> {
         });
 
         TaskProvider<RemapTask> remapJarSrc = tasks.register("remapJarSrc", RemapTask.class, task -> {
-            task.dependsOn(applyAts);
+            task.dependsOn(applyAts, createFrg2SrcMappings);
             task.onlyIf(task1 -> project.getExtensions().getByType(ClassicMCExt.class).getMappingType().equals(SOURCE));
             task.classpath(deobfToolsJarFile);
             task.getInput().set(remapJarFrg.get().getOutput());
@@ -217,7 +215,7 @@ public abstract class BasePlugin implements Plugin<Project> {
         // If in SRC phase: remapJarSrc
         // Else If Ats applied: applyAts, Else: remapJarSrc
         TaskProvider<OutputtingJavaExec> decompMC = tasks.register("decompMC", OutputtingJavaExec.class, task -> {
-            task.dependsOn(downloadFernFlower, remapJarSrc);
+            task.dependsOn(downloadFernFlower, remapJarSrc, remapJarFrg, applyAts);
             task.setOutputFilename("minecraft-mapped-fergie.jar");
             task.classpath(downloadFernFlower.get().getOutput());
             task.getMainClass().set("org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler");
@@ -348,7 +346,6 @@ public abstract class BasePlugin implements Plugin<Project> {
         });
 
         project.afterEvaluate(project1 -> {
-            // TODO: find out why Resource repo cannot be initialized pre-config
             ResourceRepo.init(project1);
 
             ExtensionContainer ext = project1.getExtensions();

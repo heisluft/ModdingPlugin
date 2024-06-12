@@ -9,7 +9,7 @@ public abstract class ATApply extends OutputtingJavaExec {
 
   public ATApply() {
     onlyIf(t -> this.getATFile().isPresent() && this.getATFile().get().getAsFile().exists());
-    getMainClass().set("de.heisluft.reveng.at.ATApplicator");
+    getMainClass().set("de.heisluft.deobf.tooling.at.ATApplicator");
     setOutputFilename("minecraft-at.jar");
   }
 
