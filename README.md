@@ -43,6 +43,7 @@ This will already give you the toolchain you need for working with mc. Including
     |----------|-------------------------------------------------------------------------------------------------|
     | 'fergie' | Partial mappings. Class names are deobfuscated, Method and Field names are named systematically |
     | 'source' | Complete deobfuscation (excluding Parameters and Local variables)                               |
+    
     Fergie Mappings allow for an interchangeable naming scheme as source mapping can be altered, enabling (theoretically)
     for multiple MML services to use them for lookups as a sort of "lingua franca". Patches are always generated with these
     intermediary mappings, since all Members are named systematically, remapping patches does not require parsing of any kind,
