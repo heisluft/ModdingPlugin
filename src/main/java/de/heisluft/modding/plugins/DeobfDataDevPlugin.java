@@ -122,7 +122,7 @@ public class DeobfDataDevPlugin extends BasePlugin {
 
       tasks.withType(ATApply.class).getByName("applyAts", task -> {
             task.dependsOn(genATs);
-            task.getOutputs().upToDateWhen(t -> validateChecksumUpdating(atFile, atChecksumFile));
+            task.getOutputs().upToDateWhen(t -> validateChecksumUpdating(atFile, atChecksumFile) && !tasks.getByName("remapJarFrg").getDidWork());
             task.getATFile().set(atFile.toFile());
         });
 

@@ -14,7 +14,7 @@ import org.gradle.api.artifacts.ResolvedArtifact;
 import org.gradle.api.artifacts.ResolvedConfiguration;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.file.DuplicatesStrategy;
-import org.gradle.api.file.RegularFile;
+import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.plugins.ExtensionContainer;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
@@ -64,7 +64,6 @@ public abstract class BasePlugin implements Plugin<Project> {
      * The location of the deobf tools jar
      */
     protected File deobfToolsJarFile;
-
     /**
      * @inheritDoc
      *
@@ -139,6 +138,7 @@ public abstract class BasePlugin implements Plugin<Project> {
         TaskProvider<Zip2ZipCopy> stripLibraries = tasks.register("stripLibraries", Zip2ZipCopy.class, task -> {
             task.getIncludedPaths().add("net/minecraft/**");
             task.getIncludedPaths().add("a/**");
+            task.getIncludedPaths().add("com/a/**");
         });
 
         TaskProvider<OutputtingJavaExec> restoreMeta = tasks.register("restoreMeta", OutputtingJavaExec.class, task -> {
@@ -156,6 +156,7 @@ public abstract class BasePlugin implements Plugin<Project> {
             task.setOutputFilename("minecraft-mapped-fergie.jar");
         });
 
+        //TODO: remapSrc and decomp should not be updated like this, cause doLast only runs if the task executed
         TaskProvider<ATApply> applyAts = tasks.register("applyAts", ATApply.class, task -> {
             task.classpath(deobfToolsJarFile);
             task.getInput().set(remapJarFrg.get().getOutput());
@@ -164,13 +165,13 @@ public abstract class BasePlugin implements Plugin<Project> {
             task.doLast(new Action<Task>() {
                 @Override
                 public void execute(@Nonnull Task t) {
-                    RegularFile out = ((OutputtingJavaExec) t).getOutput().get();
+                    RegularFileProperty out = ((OutputtingJavaExec) t).getOutput();
+                    if(!out.getAsFile().get().exists()) return;
                     TaskContainer tc = t.getProject().getTasks();
-                    tc.withType(OutputtingJavaExec.class).getByName("decompMC", task -> {
-                        task.setOutputFilename("minecraft-at.jar");
-                        task.args(out, task.getOutput().get().getAsFile().getParentFile());
-                    });
-                    tc.withType(RemapTask.class).getByName("remapJarSrc", task -> task.getInput().set(out));
+                    if(t.getProject().getExtensions().getByType(ClassicMCExt.class).getMappingType().equals(FERGIE))
+                        tc.withType(Decomp.class).getByName("decompMC", task -> task.getInput().set(out));
+                    else
+                        tc.withType(RemapTask.class).getByName("remapJarSrc", task -> task.getInput().set(out));
                 }
             });
         });
@@ -193,69 +194,19 @@ public abstract class BasePlugin implements Plugin<Project> {
             task.dependsOn(applyAts, createFrg2SrcMappings);
             task.onlyIf(task1 -> project.getExtensions().getByType(ClassicMCExt.class).getMappingType().equals(SOURCE));
             task.classpath(deobfToolsJarFile);
-            task.getInput().set(remapJarFrg.get().getOutput());
+            task.getInput().set((applyAts.get().getATFile().getAsFile().get().exists() ? applyAts : remapJarFrg).get().getOutput());
             task.getMappings().set(createFrg2SrcMappings.get().getOutput());
-            task.setOutputFilename("minecraft-remapped-src.jar");
-            // This cant be a lambda because Gradle will shit itself otherwise
-            //noinspection Convert2Lambda
-            task.doLast(new Action<Task>() {
-                @Override
-                public void execute(@Nonnull Task t) {
-                    RegularFile out = ((OutputtingJavaExec) t).getOutput().get();
-                    TaskContainer tc = t.getProject().getTasks();
-                    tc.withType(OutputtingJavaExec.class).getByName("decompMC", task -> {
-                        task.args(out, task.getOutput().get().getAsFile().getParentFile());
-                        task.setOutputFilename("minecraft-remapped-src.jar");
-                    });
-                }
-            });
+            task.setOutputFilename("minecraft-mapped-src.jar");
         });
 
-        //TODO: Caching: UP-TO-DATE if the task outputs used for it are utd:
-        // If in SRC phase: remapJarSrc
-        // Else If Ats applied: applyAts, Else: remapJarSrc
-        TaskProvider<OutputtingJavaExec> decompMC = tasks.register("decompMC", OutputtingJavaExec.class, task -> {
-            task.dependsOn(downloadFernFlower, remapJarSrc, remapJarFrg, applyAts);
-            task.setOutputFilename("minecraft-mapped-fergie.jar");
+        TaskProvider<Decomp> decompMC = tasks.register("decompMC", Decomp.class, task -> {
+            task.dependsOn(downloadFernFlower, applyAts);
             task.classpath(downloadFernFlower.get().getOutput());
-            task.getMainClass().set("org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler");
-            task.setMaxHeapSize("4G");
-            task.getJavaLauncher().set(project.getExtensions().getByType(JavaToolchainService.class).launcherFor(v -> v.getLanguageVersion().set(JavaLanguageVersion.of(11))));
-            task.args(
-                remapJarFrg.get().getOutput().get().getAsFile().getAbsolutePath(),
-                task.getOutput().get().getAsFile().getParentFile().getAbsolutePath()
-            );
-
-            // This cant be a lambda because Gradle will shit itself otherwise
-            //noinspection Convert2Lambda
-            task.doFirst(new Action<Task>() {
-                @Override
-                public void execute(@Nonnull Task task) {
-                    try {
-                        Util.deleteContents(new File(task.getProject().getBuildDir(), task.getName()));
-                    } catch (IOException e) {
-                        throw new UncheckedIOException(e);
-                    }
-                }
-            });
+            System.out.println(applyAts.get().getATFile().getAsFile().get().exists());
+            task.getInput().set((applyAts.get().getATFile().getAsFile().get().exists() ? applyAts : remapJarFrg).get().getOutput());
         });
 
-        TaskProvider<Extract> extractSrc = tasks.register("extractSrc", Extract.class, task -> {
-            task.getInput().set(decompMC.get().getOutput());
-
-            // This cant be a lambda because Gradle will shit itself otherwise
-            //noinspection Convert2Lambda
-            task.doFirst(new Action<Task>() { // If work needs to be done, we have to first purge the output
-                @Override
-                public void execute(@Nonnull Task task) {
-                    try {
-                        Util.deleteContents(((Extract)task).getOutput().getAsFile().get());
-                    } catch (IOException e) {
-                        throw new UncheckedIOException(e);
-                    }
-                }
-            });
-        });
+        TaskProvider<Extract> extractSrc = tasks.register("extractSrc", Extract.class, task -> task.getInput().set(decompMC.get().getOutput()));
 
         TaskProvider<JavaExec> renamePatches = tasks.register("renamePatches", JavaExec.class, task -> {
             task.getOutputs().upToDateWhen(t -> !createFrg2SrcMappings.get().getDidWork());
@@ -371,6 +322,11 @@ public abstract class BasePlugin implements Plugin<Project> {
                 dh.add("mcImplementation", "com.paulscode:LibraryLWJGLOpenAL:1.0.1");
                 dh.add("mcImplementation", "com.paulscode:LibraryJavaSound:1.0.1");
             }
+
+            tasks.withType(Decomp.class).getByName("decompMC", task -> {
+                boolean src = ext.getByType(ClassicMCExt.class).getMappingType().equals(SOURCE);
+                if (src) task.getInput().set(remapJarSrc.get().getOutput());
+            });
 
             tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> {
                 if (ext.getByType(ClassicMCExt.class).getMappingType().equals(SOURCE)) task.dependsOn(renamePatches);

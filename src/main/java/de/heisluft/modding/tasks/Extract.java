@@ -41,6 +41,11 @@ public abstract class Extract extends DefaultTask {
 
   @TaskAction
   public void doStuff() throws IOException {
+    try {
+      Util.deleteContents(getOutput().getAsFile().get());
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
     Path outDir = getOutput().get().getAsFile().toPath();
     Set<Predicate<Path>> patterns = includePatterns.stream().map(Util::parsePattern).collect(Collectors.toSet());
     try(FileSystem fs = Util.createFS(getInput().get().getAsFile(), false)) {

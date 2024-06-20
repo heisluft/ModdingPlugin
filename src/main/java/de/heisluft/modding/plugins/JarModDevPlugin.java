@@ -2,16 +2,10 @@ package de.heisluft.modding.plugins;
 
 import de.heisluft.modding.extensions.ClassicMCExt;
 import de.heisluft.modding.tasks.*;
-import de.heisluft.modding.util.Util;
-import org.gradle.api.Action;
 import org.gradle.api.Project;
-import org.gradle.api.Task;
 import org.gradle.api.file.Directory;
 import org.gradle.api.tasks.*;
 
-import javax.annotation.Nonnull;
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Path;
 
 import static de.heisluft.modding.extensions.ClassicMCExt.SOURCE;
@@ -36,18 +30,6 @@ public class JarModDevPlugin extends BasePlugin {
     TaskProvider<Extract> extractData = tasks.register("extractData", Extract.class, task -> {
       task.dependsOn(downloadDeobfData);
       task.getInput().set(downloadDeobfData.get().getOutput());
-      // This cant be a lambda because Gradle will shit itself otherwise
-      //noinspection Convert2Lambda
-      task.doFirst(new Action<Task>() { // If work needs to be done, we have to first purge the output
-        @Override
-        public void execute(@Nonnull Task task) {
-          try {
-            Util.deleteContents(((Extract)task).getOutput().getAsFile().get());
-          } catch (IOException e) {
-            throw new UncheckedIOException(e);
-          }
-        }
-      });
     });
 
     OutputtingJavaExec createFrg2SrcMappings  = tasks.withType(OutputtingJavaExec.class).getByName("createFrg2SrcMappings", task -> {
