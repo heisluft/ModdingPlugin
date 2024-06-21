@@ -16,7 +16,7 @@ public class JarModDevPlugin extends BasePlugin {
   public void apply(Project project) {
     super.apply(project);
 
-    Path renamedPatchesDir = project.getBuildDir().toPath().resolve("renamePatches");
+    Path renamedPatchesDir = project.getLayout().getBuildDirectory().getAsFile().get().toPath().resolve("renamePatches");
 
     TaskContainer tasks = project.getTasks();
 

@@ -10,7 +10,6 @@ import org.gradle.api.Action;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
-import org.gradle.api.artifacts.ResolvedArtifact;
 import org.gradle.api.artifacts.ResolvedConfiguration;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.file.DuplicatesStrategy;
@@ -19,6 +18,7 @@ import org.gradle.api.plugins.ExtensionContainer;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.provider.ListProperty;
+import org.gradle.api.provider.MapProperty;
 import org.gradle.api.tasks.*;
 import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
@@ -71,10 +71,8 @@ public abstract class BasePlugin implements Plugin<Project> {
      */
     @Override
     public void apply(Project project) {
-        File buildDir = project.getBuildDir();
-
         System.out.println("Auto-downloading DeobfTools...");
-        File deobfToolsDir = new File(buildDir, "downloadDeobfTools");
+        File deobfToolsDir = project.getLayout().getBuildDirectory().file("downloadDeobfTools").get().getAsFile();
         deobfToolsDir.mkdirs();
         try {
             MavenDownload.manualDownload(
@@ -156,7 +154,6 @@ public abstract class BasePlugin implements Plugin<Project> {
             task.setOutputFilename("minecraft-mapped-fergie.jar");
         });
 
-        //TODO: remapSrc and decomp should not be updated like this, cause doLast only runs if the task executed
         TaskProvider<ATApply> applyAts = tasks.register("applyAts", ATApply.class, task -> {
             task.classpath(deobfToolsJarFile);
             task.getInput().set(remapJarFrg.get().getOutput());
@@ -180,7 +177,7 @@ public abstract class BasePlugin implements Plugin<Project> {
             task.getMavenRepoUrl().set(REPO_URL);
             task.getGroupName().set("com.jetbrains");
             task.getArtifactName().set("FernFlower");
-            task.getOutput().set(new File(project.getBuildDir(), task.getName() + "/fernflower.jar"));
+            task.getOutput().set(project.getLayout().getBuildDirectory().file(task.getName() + "/fernflower.jar"));
         });
 
         TaskProvider<OutputtingJavaExec> createFrg2SrcMappings = tasks.register("createFrg2SrcMappings", OutputtingJavaExec.class, task -> {
@@ -202,7 +199,6 @@ public abstract class BasePlugin implements Plugin<Project> {
         TaskProvider<Decomp> decompMC = tasks.register("decompMC", Decomp.class, task -> {
             task.dependsOn(downloadFernFlower, applyAts);
             task.classpath(downloadFernFlower.get().getOutput());
-            System.out.println(applyAts.get().getATFile().getAsFile().get().exists());
             task.getInput().set((applyAts.get().getATFile().getAsFile().get().exists() ? applyAts : remapJarFrg).get().getOutput());
         });
 
@@ -281,14 +277,15 @@ public abstract class BasePlugin implements Plugin<Project> {
 
         TaskProvider<IdeaRunConfigMaker> genBSLRun = tasks.register("genBSLRun", IdeaRunConfigMaker.class, t -> {
             t.dependsOn(makeCPFileP);
-            ListProperty<String> jvmArgs = t.getJvmArgs();
             t.getConfigName().set("runClient");
             t.getMainClassName().set("cpw.mods.bootstraplauncher.BootstrapLauncher");
             t.getWorkDir().set("$PROJECT_DIR$/run");
-            jvmArgs.add("-Dlog4j.skipJansi=false");
-            jvmArgs.add("-Dmccl.mcClasses.dir=" + mcSourceSet.getOutput().getClassesDirs().iterator().next().getAbsolutePath());
-            jvmArgs.add("-DlegacyClassPath.file=" + makeCPFileP.get().getOutput().get().getAsFile().getAbsolutePath());
-            jvmArgs.add("-DignoreList=bootstraplauncher,securejarhandler,asm,minecraft-assets,mc");
+            MapProperty<String, String> sysProps = t.getSystemProperties();
+            sysProps.put("log4j.skipJansi", "false");
+            sysProps.put("legacyClassPath.file", makeCPFileP.get().getOutput().getAsFile().get().getAbsolutePath());
+            sysProps.put("gameClassPath.file", makeCPFileP.get().getGameCPFile().getAsFile().get().getAbsolutePath());
+            sysProps.put("ignoreList", "bootstraplauncher,securejarhandler,asm");
+            ListProperty<String> jvmArgs = t.getJvmArgs();
             jvmArgs.add("--add-modules ALL-MODULE-PATH");
             jvmArgs.add("--add-opens java.base/java.util.jar=cpw.mods.securejarhandler");
             jvmArgs.add("--add-opens java.base/java.lang.invoke=cpw.mods.securejarhandler");
@@ -340,12 +337,6 @@ public abstract class BasePlugin implements Plugin<Project> {
                         .filter(f -> startModules.stream().anyMatch(f.getName()::startsWith))
                         .map(File::getAbsolutePath)
                         .collect(Collectors.joining(File.pathSeparator, "-p ", "")));
-                if(version.startsWith("in-2010")) {
-                    task.getJvmArgs().add(cfg.getResolvedArtifacts().stream()
-                        .filter(ra -> ra.toString().contains(" (com.paulscode:"))
-                        .map(ResolvedArtifact::getFile).map(File::getName)
-                        .collect(Collectors.joining(",","-DmergeModules=","")));
-                }
                 task.getAppArgs().add("--version=" + version);
             });
         });

@@ -9,7 +9,6 @@ import org.gradle.api.tasks.TaskAction;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
 import org.gradle.jvm.toolchain.JavaToolchainService;
 
-import java.io.File;
 import java.io.IOException;
 
 public abstract class Decomp extends JavaExec {
@@ -18,7 +17,7 @@ public abstract class Decomp extends JavaExec {
     getMainClass().set("org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler");
     setMaxHeapSize("4G");
     getJavaLauncher().set(getProject().getExtensions().getByType(JavaToolchainService.class).launcherFor(v -> v.getLanguageVersion().set(JavaLanguageVersion.of(11))));
-    getOutput().convention(() -> new File(getProject().getBuildDir(), getName() + "/" + getInput().getAsFile().get().getName()));
+    getOutput().convention(getProject().getLayout().getBuildDirectory().dir(getName()).map(dir -> dir.file(getInput().getAsFile().get().getName())));
   }
 
   @InputFile
@@ -31,7 +30,7 @@ public abstract class Decomp extends JavaExec {
   @Override
   public void exec() {
     try {
-      Util.deleteContents(new File(getProject().getBuildDir(), getName()));
+      Util.deleteContents(getProject().getLayout().getBuildDirectory().dir(getName()).get().getAsFile());
     } catch(IOException e) {
       throw new RuntimeException(e);
     }

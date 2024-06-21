@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 public abstract class IdeaRunConfigMaker extends DefaultTask {
   @Input
@@ -60,6 +61,10 @@ public abstract class IdeaRunConfigMaker extends DefaultTask {
 
   @Input
   @Optional
+  public abstract MapProperty<String, String> getSystemProperties();
+
+  @Input
+  @Optional
   public abstract MapProperty<String, String> getEnvVars();
 
   @OutputFile
@@ -81,7 +86,9 @@ public abstract class IdeaRunConfigMaker extends DefaultTask {
   public void generate() throws TransformerException, ParserConfigurationException, IOException {
     Map<String, String> envVars = getEnvVars().get();
     List<String> cliArgs = getAppArgs().get();
-    List<String> jvmArgs = getJvmArgs().get();
+    List<String> jvmArgs = getSystemProperties().get().entrySet().stream()
+        .map(e -> "-D" + e.getKey() + "=" + e.getValue()).collect(Collectors.toList());
+    jvmArgs.addAll(getJvmArgs().get());
     Document doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().newDocument();
     Element rootTag = doc.createElement("component");
     doc.appendChild(rootTag);

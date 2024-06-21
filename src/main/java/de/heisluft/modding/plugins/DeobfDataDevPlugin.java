@@ -17,7 +17,6 @@ import org.gradle.api.tasks.TaskContainer;
 import org.gradle.api.tasks.TaskProvider;
 
 import javax.annotation.Nonnull;
-import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -46,11 +45,11 @@ public class DeobfDataDevPlugin extends BasePlugin {
         Path atFile = deobfWorkspaceDir.resolve("at.cfg");
         Path atChecksumFile = deobfWorkspaceDir.resolve("at.sha512");
         Path patchesDir = deobfWorkspaceDir.resolve("patches");
-        Path renamedPatchesDir = project.getBuildDir().toPath().resolve("renamePatches");
+        Path renamedPatchesDir = project.getLayout().getBuildDirectory().getAsFile().get().toPath().resolve("renamePatches");
 
         OutputtingJavaExec restoreMeta = tasks.withType(OutputtingJavaExec.class).getByName("restoreMeta", task -> {
             List<String> args = task.getArgs();
-            args.add(new File(project.getBuildDir(), task.getName() + "/mappings.frg").getAbsolutePath());
+            args.add(project.getLayout().getBuildDirectory().file(task.getName() + "/mappings.frg").get().getAsFile().getAbsolutePath());
             task.setArgs(args);
         });
 
@@ -70,7 +69,7 @@ public class DeobfDataDevPlugin extends BasePlugin {
                     restoreMeta.getOutput().get().getAsFile().getAbsolutePath(),
                     task.getOutput().get().getAsFile().getAbsolutePath(),
                     "-s",
-                    new File(project.getBuildDir(), restoreMeta.getName() + "/mappings.frg").getAbsolutePath()
+                    project.getLayout().getBuildDirectory().file(restoreMeta.getName() + "/mappings.frg").get().getAsFile().getAbsolutePath()
             );
             // This cant be a lambda because Gradle will shit itself otherwise
             //noinspection Convert2Lambda

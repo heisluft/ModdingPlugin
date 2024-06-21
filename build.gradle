@@ -5,9 +5,13 @@ plugins {
 }
 
 group 'de.heisluft.modding'
-version '0.3.0-pre+82'
+version '0.3.0-pre+89'
 
-sourceCompatibility = targetCompatibility = JavaVersion.VERSION_1_8
+java.toolchain(a -> a.languageVersion.set(JavaLanguageVersion.of(11)))
+
+compileJava {
+  sourceCompatibility = targetCompatibility = JavaVersion.VERSION_1_8
+}
 
 repositories {
   mavenCentral()

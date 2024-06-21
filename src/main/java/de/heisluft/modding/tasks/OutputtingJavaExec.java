@@ -5,15 +5,13 @@ import org.gradle.api.tasks.JavaExec;
 import org.gradle.api.tasks.OutputFile;
 import org.gradle.api.tasks.TaskAction;
 
-import java.io.File;
-
 public abstract class OutputtingJavaExec extends JavaExec {
 
   @OutputFile
   public abstract RegularFileProperty getOutput();
 
   public void setOutputFilename(String filename) {
-    getOutput().set(new File(getProject().getBuildDir(), getName() + "/" + filename));
+    getOutput().set(getProject().getLayout().getBuildDirectory().file(getName() + "/" + filename));
   }
 
   @TaskAction
