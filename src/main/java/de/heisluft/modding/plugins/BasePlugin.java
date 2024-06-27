@@ -4,6 +4,7 @@ import de.heisluft.modding.extensions.ClassicMCExt;
 import de.heisluft.modding.repo.MCRepo;
 import de.heisluft.modding.repo.ResourceRepo;
 import de.heisluft.modding.tasks.*;
+import de.heisluft.modding.util.MinecraftVersion;
 import de.heisluft.modding.util.Util;
 import net.minecraftforge.artifactural.base.artifact.SimpleArtifactIdentifier;
 import org.gradle.api.Action;
@@ -134,18 +135,16 @@ public abstract class BasePlugin implements Plugin<Project> {
         tasks.getByName("classes").dependsOn(tasks.getByName(mcSourceSet.getClassesTaskName()));
 
         TaskProvider<Zip2ZipCopy> stripLibraries = tasks.register("stripLibraries", Zip2ZipCopy.class, task -> {
+            task.getIncludedPaths().add("util/**");
+            task.getIncludedPaths().add("com/mojang/**");
             task.getIncludedPaths().add("net/minecraft/**");
             task.getIncludedPaths().add("a/**");
             task.getIncludedPaths().add("com/a/**");
         });
 
-        TaskProvider<OutputtingJavaExec> restoreMeta = tasks.register("restoreMeta", OutputtingJavaExec.class, task -> {
-            task.setOutputFilename("minecraft.jar");
-            task.dependsOn(stripLibraries);
+        TaskProvider<RestoreMeta> restoreMeta = tasks.register("restoreMeta", RestoreMeta.class, task -> {
+            task.getInput().set(stripLibraries.get().getOutput());
             task.classpath(deobfToolsJarFile);
-            task.getMainClass().set("de.heisluft.deobf.tooling.binfix.BinFixer");
-            task.getJavaLauncher().set(project.getExtensions().getByType(JavaToolchainService.class).launcherFor(v -> v.getLanguageVersion().set(JavaLanguageVersion.of(8))));
-            task.args(stripLibraries.get().getOutput().getAsFile().get().getAbsolutePath(), task.getOutput().getAsFile().get().getAbsolutePath());
         });
 
         TaskProvider<RemapTask> remapJarFrg = tasks.register("remapJarFrg", RemapTask.class, task -> {
@@ -298,21 +297,14 @@ public abstract class BasePlugin implements Plugin<Project> {
 
             ExtensionContainer ext = project1.getExtensions();
             String version = ext.getByType(ClassicMCExt.class).getVersion().get();
-            stripLibraries.configure(t -> {
-              try {
-                t.getInput().set(MCRepo.getInstance().resolve("minecraft", version).toFile());
-              } catch(IOException e) {
-                throw new RuntimeException(e);
-              }
-            });
 
             DependencyHandler dh = project1.getDependencies();
             dh.add("mcImplementation", "com.mojang:minecraft-assets:" + version);
-            // Sound dependencies. Jogg is only used from classic c0.0.16+ to c0.30,
-            // however, classic versioning is a mess, so we include it in all classic versions
+            // Sound dependencies. Jogg is only used from classic c0.0.22+ to c0.30,
             // It is replaced with paulscode starting indev versions from 2010
-            if(!version.startsWith("in")) dh.add("mcImplementation", "de.jarnbjo:j-ogg-mc:1.0.1");
-            else if(!version.substring(version.indexOf('-') + 1).startsWith("2009")) {
+            MinecraftVersion mcVersion = MinecraftVersion.of(version);
+            if(!version.startsWith("in") && mcVersion.compareTo(MinecraftVersion.of("c0.0.22a")) >= 0) dh.add("mcImplementation", "de.jarnbjo:j-ogg-mc:1.0.1");
+            else if(mcVersion.compareTo(MinecraftVersion.of("in-20100104")) >= 0) {
                 dh.add("mcImplementation", "com.paulscode:Paulscode-SoundSystem:1.0.1");
                 dh.add("mcImplementation", "com.paulscode:CodecWav:1.0.1");
                 dh.add("mcImplementation", "com.paulscode:CodecJOrbis:1.0.3");

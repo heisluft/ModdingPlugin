@@ -1,11 +1,14 @@
 package de.heisluft.modding.plugins;
 
 import de.heisluft.modding.extensions.ClassicMCExt;
+import de.heisluft.modding.repo.MCRepo;
 import de.heisluft.modding.tasks.*;
 import org.gradle.api.Project;
+import org.gradle.api.Task;
 import org.gradle.api.file.Directory;
 import org.gradle.api.tasks.*;
 
+import java.io.IOException;
 import java.nio.file.Path;
 
 import static de.heisluft.modding.extensions.ClassicMCExt.SOURCE;
@@ -52,8 +55,23 @@ public class JarModDevPlugin extends BasePlugin {
     tasks.getByName("genPatches", task -> ((Differ) task).getBackupSrcDir().set(applyCompilerPatches.getOutput()));
 
     project.afterEvaluate(project1 -> {
-      boolean srcRemapping = project1.getExtensions().getByType(ClassicMCExt.class).getMappingType().equals(SOURCE);
+      ClassicMCExt ext = project1.getExtensions().getByType(ClassicMCExt.class);
+      boolean srcRemapping = ext.getMappingType().equals(SOURCE);
+
+      // We have to remap first as the Remapper cannot infer inheritance information for obfuscated
+      // libs after they are stripped
+      RemapTask ta = tasks.withType(RemapTask.class).getByName("remapJarFrg", t -> {
+        try {
+          t.getInput().set(MCRepo.getInstance().resolve("minecraft", ext.getVersion().get()).toFile());
+        } catch(IOException e) {
+          throw new RuntimeException(e);
+        }
+      });
+      RestoreMeta ta1 = tasks.withType(RestoreMeta.class).getByName("restoreMeta", task -> task.getInput().set(ta.getOutput()));
+      Zip2ZipCopy ta2 = tasks.withType(Zip2ZipCopy.class).getByName("stripLibraries", task -> task.getInput().set(ta1.getOutput()));
+      tasks.withType(ATApply.class).getByName("applyAts", task -> task.getInput().set(ta2.getOutput()));
       tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> task.getPatchDir().set(srcRemapping ? renamedPatchesDir.toFile() : extractData.get().getOutput().get().dir("patches").getAsFile()));
+
     });
   }
 }

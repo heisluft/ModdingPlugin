@@ -1,12 +1,14 @@
 package de.heisluft.modding.plugins;
 
 import de.heisluft.modding.extensions.ClassicMCExt;
+import de.heisluft.modding.repo.MCRepo;
 import de.heisluft.modding.tasks.ATApply;
 import de.heisluft.modding.tasks.Differ;
 import de.heisluft.modding.tasks.Extract;
 import de.heisluft.modding.tasks.OutputtingJavaExec;
 import de.heisluft.modding.tasks.Patcher;
 import de.heisluft.modding.tasks.RemapTask;
+import de.heisluft.modding.tasks.RestoreMeta;
 import de.heisluft.modding.tasks.Zip2ZipCopy;
 import de.heisluft.modding.util.Util;
 import org.gradle.api.Action;
@@ -47,11 +49,7 @@ public class DeobfDataDevPlugin extends BasePlugin {
         Path patchesDir = deobfWorkspaceDir.resolve("patches");
         Path renamedPatchesDir = project.getLayout().getBuildDirectory().getAsFile().get().toPath().resolve("renamePatches");
 
-        OutputtingJavaExec restoreMeta = tasks.withType(OutputtingJavaExec.class).getByName("restoreMeta", task -> {
-            List<String> args = task.getArgs();
-            args.add(project.getLayout().getBuildDirectory().file(task.getName() + "/mappings.frg").get().getAsFile().getAbsolutePath());
-            task.setArgs(args);
-        });
+        RestoreMeta restoreMeta = tasks.withType(RestoreMeta.class).getByName("restoreMeta", task -> task.setMappingsFileName("mappings.frg"));
 
         try {
             Files.createDirectories(patchesDir);
@@ -66,10 +64,10 @@ public class DeobfDataDevPlugin extends BasePlugin {
             task.getMainClass().set("de.heisluft.deobf.tooling.Remapper");
             task.args(
                     "map",
-                    restoreMeta.getOutput().get().getAsFile().getAbsolutePath(),
-                    task.getOutput().get().getAsFile().getAbsolutePath(),
+                    restoreMeta.getOutput().getAsFile().get().getAbsolutePath(),
+                    task.getOutput().getAsFile().get().getAbsolutePath(),
                     "-s",
-                    project.getLayout().getBuildDirectory().file(restoreMeta.getName() + "/mappings.frg").get().getAsFile().getAbsolutePath()
+                    restoreMeta.getMappings().getAsFile().get().getAbsolutePath()
             );
             // This cant be a lambda because Gradle will shit itself otherwise
             //noinspection Convert2Lambda
@@ -169,7 +167,17 @@ public class DeobfDataDevPlugin extends BasePlugin {
         });
 
         project.afterEvaluate(project1 -> {
-            boolean srcRemapping = Objects.equals(project1.getExtensions().getByType(ClassicMCExt.class).getMappingType(), SOURCE);
+            ClassicMCExt ext = project1.getExtensions().getByType(ClassicMCExt.class);
+            boolean srcRemapping = SOURCE.equals(ext.getMappingType());
+            String version = ext.getVersion().get();
+
+            tasks.withType(Zip2ZipCopy.class).getByName("stripLibraries", t -> {
+                try {
+                    t.getInput().set(MCRepo.getInstance().resolve("minecraft", version).toFile());
+                } catch(IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
 
             if(srcRemapping) {
                 try {
@@ -183,7 +191,7 @@ public class DeobfDataDevPlugin extends BasePlugin {
             }
 
             // Classic jars had their dependencies obfuscated, so we have to remap them, this is not the case for JarModDev, as there, the mappings already exist
-            if(!project1.getExtensions().getByType(ClassicMCExt.class).getVersion().get().startsWith("in"))
+            if(!version.startsWith("in"))
                 tasks.withType(Zip2ZipCopy.class).getByName("stripLibraries", t -> t.getIncludedPaths().add("**"));
             // TODO: add stripClassicLibraries back
             //else tasks.withType(Zip2ZipCopy.class).getByName("stripClassicLibraries", t -> t.getIncludedPaths().add("**"));
