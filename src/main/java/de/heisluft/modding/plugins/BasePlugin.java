@@ -11,6 +11,9 @@ import org.gradle.api.Action;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
+import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.Dependency;
+import org.gradle.api.artifacts.DependencySet;
 import org.gradle.api.artifacts.ResolvedConfiguration;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.file.DuplicatesStrategy;
@@ -20,6 +23,7 @@ import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.MapProperty;
+import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.*;
 import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
@@ -32,6 +36,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -96,7 +101,8 @@ public abstract class BasePlugin implements Plugin<Project> {
         mcSourceSet = javaExt.getSourceSets().maybeCreate("mc");
         // We don't want things like modlauncher to be available to the mc source code
         // so implementation will not cover that
-        project.getConfigurations().getByName("implementation").setExtendsFrom(Collections.singleton(project.getConfigurations().getByName("mcImplementation")));
+        Configuration mcImplCfg = project.getConfigurations().getByName("mcImplementation");
+        project.getConfigurations().getByName("implementation").setExtendsFrom(Collections.singleton(mcImplCfg));
         project.getTasks().withType(JavaCompile.class).forEach(javaCompile -> {
             javaCompile.getOptions().setEncoding("UTF-8");
             // We want to ensure basic binary compatability with mojang.
@@ -108,6 +114,8 @@ public abstract class BasePlugin implements Plugin<Project> {
                 javaCompile.setSourceCompatibility("1.5");
             }
         });
+        // register the mcVersion extension
+        Property<String> versionProp = project.getExtensions().create("classicMC", ClassicMCExt.class).getVersion();
         // Maven Central hosts log4j, asm, jansi and lwjgl
         project.getRepositories().mavenCentral();
         // heisluft.de hosts jopt-simple with auto-module-name and JOgg
@@ -115,9 +123,27 @@ public abstract class BasePlugin implements Plugin<Project> {
         // minecraftforge.net hosts bsl, sjh and modlauncher
         project.getRepositories().maven(repo -> repo.setUrl("https://maven.neoforged.net/"));
         DependencyHandler d = project.getDependencies();
+        DependencySet mcImplDeps = mcImplCfg.getDependencies();
         // LWJGL
-        d.add("mcImplementation", "org.lwjgl.lwjgl:lwjgl:2.9.3");
-        d.add("mcImplementation", "org.lwjgl.lwjgl:lwjgl_util:2.9.3");
+        mcImplDeps.add(d.create("org.lwjgl.lwjgl:lwjgl:2.9.3"));
+        mcImplDeps.add(d.create("org.lwjgl.lwjgl:lwjgl_util:2.9.3"));
+        mcImplDeps.addAllLater(versionProp.map(version -> {
+            List<Dependency> deps = new ArrayList<>();
+            deps.add(d.create("com.mojang:minecraft-assets:" + version));
+            // Sound dependencies. Jogg is only used from classic c0.0.22+ to c0.30,
+            // It is replaced with paulscode starting indev versions from 2010
+            MinecraftVersion mcVersion = MinecraftVersion.of(version);
+            if(!version.startsWith("in") && mcVersion.compareTo(MinecraftVersion.of("c0.0.22a")) >= 0)
+                deps.add(d.create("de.jarnbjo:j-ogg-mc:1.0.1"));
+            else if(mcVersion.compareTo(MinecraftVersion.of("in-20100104")) >= 0) {
+                deps.add(d.create("com.paulscode:Paulscode-SoundSystem:1.0.1"));
+                deps.add(d.create("com.paulscode:CodecWav:1.0.1"));
+                deps.add(d.create("com.paulscode:CodecJOrbis:1.0.3"));
+                deps.add(d.create("com.paulscode:LibraryLWJGLOpenAL:1.0.1"));
+                deps.add(d.create("com.paulscode:LibraryJavaSound:1.0.1"));
+            }
+            return deps;
+        }));
         // ModLauncher and BSL
         d.add("implementation", "cpw.mods:modlauncher:11.0.2");
         d.add("implementation", "cpw.mods:bootstraplauncher:2.0.2");
@@ -126,8 +152,6 @@ public abstract class BasePlugin implements Plugin<Project> {
         d.add("implementation", "net.sf.jopt-simple:jopt-simple:5.0.5");
         // For Log4j ANSI support within IntelliJ and on Windows
         d.add("runtimeOnly", "org.fusesource.jansi:jansi:2.4.0");
-        // register the mcVersion extension
-        project.getExtensions().create("classicMC", ClassicMCExt.class);
 
         // setup shared tasks
         TaskContainer tasks = project.getTasks();
@@ -297,20 +321,6 @@ public abstract class BasePlugin implements Plugin<Project> {
 
             ExtensionContainer ext = project1.getExtensions();
             String version = ext.getByType(ClassicMCExt.class).getVersion().get();
-
-            DependencyHandler dh = project1.getDependencies();
-            dh.add("mcImplementation", "com.mojang:minecraft-assets:" + version);
-            // Sound dependencies. Jogg is only used from classic c0.0.22+ to c0.30,
-            // It is replaced with paulscode starting indev versions from 2010
-            MinecraftVersion mcVersion = MinecraftVersion.of(version);
-            if(!version.startsWith("in") && mcVersion.compareTo(MinecraftVersion.of("c0.0.22a")) >= 0) dh.add("mcImplementation", "de.jarnbjo:j-ogg-mc:1.0.1");
-            else if(mcVersion.compareTo(MinecraftVersion.of("in-20100104")) >= 0) {
-                dh.add("mcImplementation", "com.paulscode:Paulscode-SoundSystem:1.0.1");
-                dh.add("mcImplementation", "com.paulscode:CodecWav:1.0.1");
-                dh.add("mcImplementation", "com.paulscode:CodecJOrbis:1.0.3");
-                dh.add("mcImplementation", "com.paulscode:LibraryLWJGLOpenAL:1.0.1");
-                dh.add("mcImplementation", "com.paulscode:LibraryJavaSound:1.0.1");
-            }
 
             tasks.withType(Decomp.class).getByName("decompMC", task -> {
                 boolean src = ext.getByType(ClassicMCExt.class).getMappingType().equals(SOURCE);
