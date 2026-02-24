@@ -110,11 +110,12 @@ public abstract class BasePlugin implements Plugin<Project> {
                 javaCompile.getJavaCompiler().set(service.compilerFor(versionOf(8)));
                 javaCompile.setTargetCompatibility("1.5");
                 javaCompile.setSourceCompatibility("1.5");
-                javaCompile.dependsOn(project.getTasks().named("makeAssetJar"));
             }
         });
         // register the mcVersion extension
-        Property<String> versionProp = project.getExtensions().create("classicMC", ClassicMCExt.class).getVersion();
+        ClassicMCExt mcExt = project.getExtensions().create("classicMC", ClassicMCExt.class);
+        Property<String> versionProp = mcExt.getVersion();
+        Property<String> mappingTypeProp = mcExt.getMappingType();
         // Maven Central hosts log4j, asm, jansi and lwjgl
         project.getRepositories().mavenCentral();
         // heisluft.de hosts jopt-simple with auto-module-name and JOgg
@@ -217,7 +218,8 @@ public abstract class BasePlugin implements Plugin<Project> {
         TaskProvider<MavenDownload> downloadFernFlower = tasks.register("downloadFernFlower", MavenDownload.class, task -> {
             task.getMavenRepoUrl().set(REPO_URL);
             task.getGroupName().set("com.jetbrains");
-            task.getArtifactName().set("FernFlower");
+            task.getArtifactName().set("fernflower");
+            task.getVersion().set("last-j11");
             task.getOutput().set(project.getLayout().getBuildDirectory().file(task.getName() + "/fernflower.jar"));
         });
 
@@ -241,6 +243,7 @@ public abstract class BasePlugin implements Plugin<Project> {
             task.dependsOn(downloadFernFlower, applyAts);
             task.classpath(downloadFernFlower.get().getOutput());
             task.getInput().set((applyAts.get().getATFile().getAsFile().get().exists() ? applyAts : remapJarFrg).get().getOutput());
+            if(mappingTypeProp.get().equals(SOURCE)) task.getInput().set(remapJarSrc.get().getOutput());
         });
 
         TaskProvider<Extract> extractSrc = tasks.register("extractSrc", Extract.class, task -> task.getInput().set(decompMC.get().getOutput()));
@@ -266,6 +269,7 @@ public abstract class BasePlugin implements Plugin<Project> {
                     }
                 }
             });
+            if(mappingTypeProp.get().equals(SOURCE)) task.dependsOn(renamePatches);
         });
 
         TaskProvider<Copy> copySrc = tasks.register("copySrc", Copy.class, task -> {
@@ -314,9 +318,10 @@ public abstract class BasePlugin implements Plugin<Project> {
             task.getModifiedSrcDir().set(mcSourceSet.getJava().getSrcDirs().iterator().next());
         });
 
-        TaskProvider<CPFileDecorator> makeCPFileP = tasks.register("makeCPFile", CPFileDecorator.class);
+        TaskProvider<CPFileDecorator> genCPFiles = tasks.register("genCPFiles", CPFileDecorator.class);
 
         tasks.register("launchMC", JavaExec.class, t -> {
+            t.dependsOn(genCPFiles, mcSourceSet.getCompileJavaTaskName(), "compileJava");
             t.getJvmArgumentProviders().add(new CommandLineArgumentProvider() {
                 @Override
                 public Iterable<String> asArguments() {
@@ -332,26 +337,13 @@ public abstract class BasePlugin implements Plugin<Project> {
                         .map(File::getAbsolutePath)
                         .collect(Collectors.joining(File.pathSeparator)),
                         "-Dlog4j.skipJansi=false",
-                        "-DlegacyClassPath.file=" + makeCPFileP.get().getOutput().getAsFile().get().getAbsolutePath(),
+                        "-DlegacyClassPath.file=" + genCPFiles.get().getOutput().getAsFile().get().getAbsolutePath(),
                         "-DignoreList=bootstraplauncher,securejarhandler,asm"
                     );
                 }
             });
             t.setWorkingDir(new File(project.getProjectDir(), "run"));
             t.getMainClass().set("cpw.mods.bootstraplauncher.BootstrapLauncher");
-        });
-
-        project.afterEvaluate(project1 -> {
-            ExtensionContainer ext = project1.getExtensions();
-
-            tasks.withType(Decomp.class).getByName("decompMC", task -> {
-                boolean src = ext.getByType(ClassicMCExt.class).getMappingType().get().equals(SOURCE);
-                if (src) task.getInput().set(remapJarSrc.get().getOutput());
-            });
-
-            tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> {
-                if (ext.getByType(ClassicMCExt.class).getMappingType().get().equals(SOURCE)) task.dependsOn(renamePatches);
-            });
         });
     }
 }
