@@ -7,6 +7,7 @@ import com.github.difflib.patch.PatchFailedException;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.tasks.InputDirectory;
+import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.OutputDirectory;
 import org.gradle.api.tasks.TaskAction;
 
@@ -25,6 +26,7 @@ public abstract class Patcher extends DefaultTask {
   public abstract DirectoryProperty getInput();
 
   @InputDirectory
+  @Optional
   public abstract DirectoryProperty getPatchDir();
 
   @OutputDirectory
@@ -37,7 +39,7 @@ public abstract class Patcher extends DefaultTask {
   @TaskAction
   public void doStuff() throws IOException {
     try {
-      Map<String, Patch<String>> patches = StreamSupport.stream(
+      Map<String, Patch<String>> patches = getPatchDir().isPresent() ? StreamSupport.stream(
           getPatchDir().getAsFileTree().spliterator(), false).map(f -> {
         try {
           return Files.readAllLines(f.toPath());
@@ -49,7 +51,8 @@ public abstract class Patcher extends DefaultTask {
           (hashMap, hashMap2) -> {
             hashMap.putAll(hashMap2);
             return hashMap;
-          }));
+          })
+      ) : new HashMap<>();
       Path inDirRoot = getInput().getAsFile().get().toPath();
       Path outDirRoot = getOutput().getAsFile().get().toPath();
       Files.walk(inDirRoot).filter(Files::isRegularFile).forEach(p -> {

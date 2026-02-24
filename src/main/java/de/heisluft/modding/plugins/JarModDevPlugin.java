@@ -4,10 +4,10 @@ import de.heisluft.modding.extensions.ClassicMCExt;
 import de.heisluft.modding.repo.MCRepo;
 import de.heisluft.modding.tasks.*;
 import org.gradle.api.Project;
-import org.gradle.api.Task;
 import org.gradle.api.file.Directory;
 import org.gradle.api.tasks.*;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 
@@ -48,9 +48,9 @@ public class JarModDevPlugin extends BasePlugin {
     });
     tasks.withType(ATApply.class).getByName("applyAts", task -> task.getATFile().set(extractData.get().getOutput().get().file("at.cfg")));
 
-    Patcher applyCompilerPatches = tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> {
-      task.getPatchDir().set(extractData.get().getOutput().dir("patches"));
-    });
+    Patcher applyCompilerPatches = tasks.withType(Patcher.class).getByName("applyCompilerPatches", task ->
+      task.getPatchDir().set(extractData.get().getOutput().dir("patches"))
+    );
 
     tasks.getByName("genPatches", task -> ((Differ) task).getBackupSrcDir().set(applyCompilerPatches.getOutput()));
 
@@ -70,7 +70,10 @@ public class JarModDevPlugin extends BasePlugin {
       RestoreMeta ta1 = tasks.withType(RestoreMeta.class).getByName("restoreMeta", task -> task.getInput().set(ta.getOutput()));
       Zip2ZipCopy ta2 = tasks.withType(Zip2ZipCopy.class).getByName("stripLibraries", task -> task.getInput().set(ta1.getOutput()));
       tasks.withType(ATApply.class).getByName("applyAts", task -> task.getInput().set(ta2.getOutput()));
-      tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> task.getPatchDir().set(srcRemapping ? renamedPatchesDir.toFile() : extractData.get().getOutput().get().dir("patches").getAsFile()));
+      tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> {
+        File patchesDir = extractData.get().getOutput().get().dir("patches").getAsFile();
+        if(patchesDir.isDirectory()) task.getPatchDir().set(srcRemapping ? renamedPatchesDir.toFile() : patchesDir);
+      });
 
     });
   }
