@@ -110,6 +110,7 @@ public abstract class BasePlugin implements Plugin<Project> {
                 javaCompile.getJavaCompiler().set(service.compilerFor(versionOf(8)));
                 javaCompile.setTargetCompatibility("1.5");
                 javaCompile.setSourceCompatibility("1.5");
+                javaCompile.dependsOn(project.getTasks().named("makeAssetJar"));
             }
         });
         // register the mcVersion extension
@@ -205,7 +206,7 @@ public abstract class BasePlugin implements Plugin<Project> {
                     RegularFileProperty out = ((OutputtingJavaExec) t).getOutput();
                     if(!out.getAsFile().get().exists()) return;
                     TaskContainer tc = t.getProject().getTasks();
-                    if(t.getProject().getExtensions().getByType(ClassicMCExt.class).getMappingType().equals(FERGIE))
+                    if(t.getProject().getExtensions().getByType(ClassicMCExt.class).getMappingType().get().equals(FERGIE))
                         tc.withType(Decomp.class).getByName("decompMC", task -> task.getInput().set(out));
                     else
                         tc.withType(RemapTask.class).getByName("remapJarSrc", task -> task.getInput().set(out));
@@ -221,7 +222,7 @@ public abstract class BasePlugin implements Plugin<Project> {
         });
 
         TaskProvider<OutputtingJavaExec> createFrg2SrcMappings = tasks.register("createFrg2SrcMappings", OutputtingJavaExec.class, task -> {
-            task.onlyIf(task1 -> project.getExtensions().getByType(ClassicMCExt.class).getMappingType().equals(SOURCE));
+            task.onlyIf(task1 -> project.getExtensions().getByType(ClassicMCExt.class).getMappingType().get().equals(SOURCE));
             task.classpath(deobfToolsJarFile);
             task.setOutputFilename("frg2src.frg");
             task.getMainClass().set("de.heisluft.deobf.tooling.Remapper");
@@ -229,7 +230,7 @@ public abstract class BasePlugin implements Plugin<Project> {
 
         TaskProvider<RemapTask> remapJarSrc = tasks.register("remapJarSrc", RemapTask.class, task -> {
             task.dependsOn(applyAts, createFrg2SrcMappings);
-            task.onlyIf(task1 -> project.getExtensions().getByType(ClassicMCExt.class).getMappingType().equals(SOURCE));
+            task.onlyIf(task1 -> project.getExtensions().getByType(ClassicMCExt.class).getMappingType().get().equals(SOURCE));
             task.classpath(deobfToolsJarFile);
             task.getInput().set((applyAts.get().getATFile().getAsFile().get().exists() ? applyAts : remapJarFrg).get().getOutput());
             task.getMappings().set(createFrg2SrcMappings.get().getOutput());
@@ -308,7 +309,7 @@ public abstract class BasePlugin implements Plugin<Project> {
         });
 
         tasks.register("genPatches", Differ.class, task -> {
-            task.onlyIf(t -> t.getProject().getExtensions().getByType(ClassicMCExt.class).getMappingType().equals(FERGIE));
+            task.onlyIf(t -> t.getProject().getExtensions().getByType(ClassicMCExt.class).getMappingType().get().equals(FERGIE));
             task.dependsOn(copySrc);
             task.getModifiedSrcDir().set(mcSourceSet.getJava().getSrcDirs().iterator().next());
         });
@@ -344,12 +345,12 @@ public abstract class BasePlugin implements Plugin<Project> {
             ExtensionContainer ext = project1.getExtensions();
 
             tasks.withType(Decomp.class).getByName("decompMC", task -> {
-                boolean src = ext.getByType(ClassicMCExt.class).getMappingType().equals(SOURCE);
+                boolean src = ext.getByType(ClassicMCExt.class).getMappingType().get().equals(SOURCE);
                 if (src) task.getInput().set(remapJarSrc.get().getOutput());
             });
 
             tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> {
-                if (ext.getByType(ClassicMCExt.class).getMappingType().equals(SOURCE)) task.dependsOn(renamePatches);
+                if (ext.getByType(ClassicMCExt.class).getMappingType().get().equals(SOURCE)) task.dependsOn(renamePatches);
             });
         });
     }

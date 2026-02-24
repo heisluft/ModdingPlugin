@@ -56,7 +56,7 @@ public class JarModDevPlugin extends BasePlugin {
 
     project.afterEvaluate(project1 -> {
       ClassicMCExt ext = project1.getExtensions().getByType(ClassicMCExt.class);
-      boolean srcRemapping = ext.getMappingType().equals(SOURCE);
+      boolean srcRemapping = ext.getMappingType().get().equals(SOURCE);
 
       // We have to remap first as the Remapper cannot infer inheritance information for obfuscated
       // libs after they are stripped

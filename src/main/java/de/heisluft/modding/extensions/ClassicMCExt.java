@@ -9,16 +9,9 @@ public abstract class ClassicMCExt {
 
   public abstract Property<String> getVersion();
   public abstract Property<String> getServerVersion();
+  public abstract Property<String> getMappingType();
 
-  @Nonnull
-  private String mappingType = FERGIE;
-
-  @Nonnull
-  public String getMappingType() {
-    return mappingType;
-  }
-
-  public void setMappingType(@Nonnull String mappingType) {
-    this.mappingType = mappingType;
+  public ClassicMCExt() {
+    getMappingType().convention(FERGIE);
   }
 }

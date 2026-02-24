@@ -168,7 +168,7 @@ public class DeobfDataDevPlugin extends BasePlugin {
 
         project.afterEvaluate(project1 -> {
             ClassicMCExt ext = project1.getExtensions().getByType(ClassicMCExt.class);
-            boolean srcRemapping = SOURCE.equals(ext.getMappingType());
+            boolean srcRemapping = SOURCE.equals(ext.getMappingType().get());
             String version = ext.getVersion().get();
 
             tasks.withType(Zip2ZipCopy.class).getByName("stripLibraries", t -> {
