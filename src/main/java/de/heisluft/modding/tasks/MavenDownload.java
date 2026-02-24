@@ -59,7 +59,7 @@ public abstract class MavenDownload extends DefaultTask {
   }
 
   private static void doExec(String repoUrl, String group, String name, String versionRaw, String classifier, String extension, File outputFile) throws IOException {
-    String version;
+    String version, expandedVersion;
     String baseUrl = repoUrl + (repoUrl.endsWith("/") ? "" : "/") + group.replace('.', '/') + "/" + name + "/";
     try(InputStream is = new URL(baseUrl + "maven-metadata.xml").openStream()) {
       Document document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(is);
@@ -73,14 +73,23 @@ public abstract class MavenDownload extends DefaultTask {
         default: version = versionRaw;
       }
       NodeList versionsQuery = document.getElementsByTagName("versions");
-      if(versionsQuery.getLength() == 0) System.err.println("maven-metadata.xml does not list any versions. This is an error on the repo side! Report to maintainers of " + repoUrl);
-      else {
-        if(!MavenMetaUtil.getVersions(document).contains(version)) throw new FileNotFoundException("Found no data for version '" + version + "' of artifact '" + name + "' in maven repo at " + repoUrl);
-      }
+      if(versionsQuery.getLength() == 0) throw new FileNotFoundException("maven-metadata.xml does not list any versions. This is an error on the repo side! Report to maintainers of " + repoUrl);
+      if(!MavenMetaUtil.getVersions(document).contains(version)) throw new FileNotFoundException("Found no data for version '" + version + "' of artifact '" + name + "' in maven repo at " + repoUrl);
     } catch(SAXException | ParserConfigurationException ex) {
       throw new RuntimeException(ex);
     }
-    URL url = new URL(baseUrl + version + "/" + name  + "-" + version + classifier + "." + extension);
+    if(version.endsWith("-SNAPSHOT")) {
+      try(InputStream is = new URL(baseUrl + version + "/maven-metadata.xml").openStream()) {
+        Document document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(is);
+        NodeList query = document.getElementsByTagName("timestamp");
+        NodeList query2 = document.getElementsByTagName("buildNumber");
+        if(query.getLength() != 1 || query2.getLength() != 1) throw new FileNotFoundException("snapshot maven-metadata.xml is malformed");
+        expandedVersion = version.replace("SNAPSHOT", query.item(0).getTextContent() + "-" + query2.item(0).getTextContent());
+      } catch(SAXException | ParserConfigurationException ex) {
+        throw new RuntimeException(ex);
+      }
+    } else expandedVersion = version;
+    URL url = new URL(baseUrl + version + "/" + name  + "-" + expandedVersion + classifier + "." + extension);
     try(FileOutputStream os = new FileOutputStream(outputFile); InputStream is = url.openConnection().getInputStream()) {
       byte[] buf = new byte[1024];
       int read;
