@@ -1,8 +1,5 @@
 package de.heisluft.modding.util;
 
-import net.minecraftforge.artifactural.api.artifact.ArtifactIdentifier;
-import net.minecraftforge.artifactural.base.artifact.SimpleArtifactIdentifier;
-
 public class IdentifierUtil {
 
   public static ArtifactIdentifier parseIdentifier(String artifactIdentifier) {
@@ -54,6 +51,6 @@ public class IdentifierUtil {
     String version = hasVersion ? versionBuilder.toString() : "latest";
     String classifier = hasClassifier ? classifierBuilder.toString() : null;
     String extension = hasExt ? extensionBuilder.toString() : "jar";
-    return new SimpleArtifactIdentifier(group, name, version, classifier, extension);
+    return new ArtifactIdentifier(group, name, version, classifier, extension);
   }
 }

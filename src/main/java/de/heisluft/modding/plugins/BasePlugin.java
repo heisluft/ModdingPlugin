@@ -2,11 +2,10 @@ package de.heisluft.modding.plugins;
 
 import de.heisluft.modding.extensions.ClassicMCExt;
 import de.heisluft.modding.repo.MCRepo;
-import de.heisluft.modding.repo.ResourceRepo;
 import de.heisluft.modding.tasks.*;
+import de.heisluft.modding.util.ArtifactIdentifier;
 import de.heisluft.modding.util.MinecraftVersion;
 import de.heisluft.modding.util.Util;
-import net.minecraftforge.artifactural.base.artifact.SimpleArtifactIdentifier;
 import org.gradle.api.Action;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
@@ -14,21 +13,20 @@ import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.Dependency;
 import org.gradle.api.artifacts.DependencySet;
-import org.gradle.api.artifacts.ResolvedConfiguration;
+import org.gradle.api.artifacts.ResolvedArtifact;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.file.DuplicatesStrategy;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.plugins.ExtensionContainer;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
-import org.gradle.api.provider.ListProperty;
-import org.gradle.api.provider.MapProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.*;
 import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
 import org.gradle.jvm.toolchain.JavaToolchainService;
 import org.gradle.jvm.toolchain.JavaToolchainSpec;
+import org.gradle.process.CommandLineArgumentProvider;
 
 import javax.annotation.Nonnull;
 import java.io.File;
@@ -83,7 +81,7 @@ public abstract class BasePlugin implements Plugin<Project> {
         try {
             MavenDownload.manualDownload(
                     REPO_URL,
-                    new SimpleArtifactIdentifier("de.heisluft.deobf.tooling", "DeobfTools", "latest", "all", null),
+                    new ArtifactIdentifier("de.heisluft.deobf.tooling", "DeobfTools", "latest", "all", null),
                     deobfToolsJarFile = new File(deobfToolsDir, "DeobfTools.jar")
             );
         } catch (IOException e) {
@@ -129,7 +127,7 @@ public abstract class BasePlugin implements Plugin<Project> {
         mcImplDeps.add(d.create("org.lwjgl.lwjgl:lwjgl_util:2.9.3"));
         mcImplDeps.addAllLater(versionProp.map(version -> {
             List<Dependency> deps = new ArrayList<>();
-            deps.add(d.create("com.mojang:minecraft-assets:" + version));
+            //deps.add(d.create("com.mojang:minecraft-assets:" + version));
             // Sound dependencies. Jogg is only used from classic c0.0.22+ to c0.30,
             // It is replaced with paulscode starting indev versions from 2010
             MinecraftVersion mcVersion = MinecraftVersion.of(version);
@@ -157,6 +155,25 @@ public abstract class BasePlugin implements Plugin<Project> {
         TaskContainer tasks = project.getTasks();
 
         tasks.getByName("classes").dependsOn(tasks.getByName(mcSourceSet.getClassesTaskName()));
+
+        TaskProvider<Zip2ZipCopy> makeAssetJar = tasks.register("makeAssetJar", Zip2ZipCopy.class, task -> {
+            task.getOutput().set(versionProp.flatMap(version ->
+                    project.getLayout()
+                        .getBuildDirectory()
+                        .dir(task.getName())
+                        .map(dir -> dir.file("minecraft-assets-" + version + ".jar"))
+            ));
+            task.getIncludedPaths().addAll(Arrays.asList("**.png", "**.gif", "**.md3", "**.MD3"));
+            task.getInput().fileProvider(versionProp.map(version -> {
+              try {
+                return MCRepo.getInstance().resolve("minecraft", version).toFile();
+              } catch(IOException e) {
+                throw new RuntimeException(e);
+              }
+            }));
+        });
+
+        mcImplDeps.add(d.create(project.files(makeAssetJar)));
 
         TaskProvider<Zip2ZipCopy> stripLibraries = tasks.register("stripLibraries", Zip2ZipCopy.class, task -> {
             task.getIncludedPaths().add("util/**");
@@ -298,29 +315,33 @@ public abstract class BasePlugin implements Plugin<Project> {
 
         TaskProvider<CPFileDecorator> makeCPFileP = tasks.register("makeCPFile", CPFileDecorator.class);
 
-        TaskProvider<IdeaRunConfigMaker> genBSLRun = tasks.register("genBSLRun", IdeaRunConfigMaker.class, t -> {
-            t.dependsOn(makeCPFileP);
-            t.getConfigName().set("runClient");
-            t.getMainClassName().set("cpw.mods.bootstraplauncher.BootstrapLauncher");
-            t.getWorkDir().set("$PROJECT_DIR$/run");
-            MapProperty<String, String> sysProps = t.getSystemProperties();
-            sysProps.put("log4j.skipJansi", "false");
-            sysProps.put("legacyClassPath.file", makeCPFileP.get().getOutput().getAsFile().get().getAbsolutePath());
-            sysProps.put("gameClassPath.file", makeCPFileP.get().getGameCPFile().getAsFile().get().getAbsolutePath());
-            sysProps.put("ignoreList", "bootstraplauncher,securejarhandler,asm");
-            ListProperty<String> jvmArgs = t.getJvmArgs();
-            jvmArgs.add("--add-modules ALL-MODULE-PATH");
-            jvmArgs.add("--add-opens java.base/java.util.jar=cpw.mods.securejarhandler");
-            jvmArgs.add("--add-opens java.base/java.lang.invoke=cpw.mods.securejarhandler");
-            jvmArgs.add("--add-exports java.base/sun.security.util=cpw.mods.securejarhandler");
-            jvmArgs.add("--add-exports jdk.naming.dns/com.sun.jndi.dns=java.naming");
+        tasks.register("launchMC", JavaExec.class, t -> {
+            t.getJvmArgumentProviders().add(new CommandLineArgumentProvider() {
+                @Override
+                public Iterable<String> asArguments() {
+                    return Arrays.asList(
+                        "--add-modules", "ALL-MODULE-PATH",
+                        "--add-opens", "java.base/java.util.jar=cpw.mods.securejarhandler",
+                        "--add-opens", "java.base/java.lang.invoke=cpw.mods.securejarhandler",
+                        "--add-exports", "java.base/sun.security.util=cpw.mods.securejarhandler",
+                        "--add-exports", "jdk.naming.dns/com.sun.jndi.dns=java.naming",
+                        "-p", project.getConfigurations().getByName("runtimeClasspath").getResolvedConfiguration()
+                        .getResolvedArtifacts().stream().map(ResolvedArtifact::getFile)
+                        .filter(f -> Stream.of("asm-", "bootstraplauncher-", "securejarhandler-").anyMatch(f.getName()::startsWith))
+                        .map(File::getAbsolutePath)
+                        .collect(Collectors.joining(File.pathSeparator)),
+                        "-Dlog4j.skipJansi=false",
+                        "-DlegacyClassPath.file=" + makeCPFileP.get().getOutput().getAsFile().get().getAbsolutePath(),
+                        "-DignoreList=bootstraplauncher,securejarhandler,asm"
+                    );
+                }
+            });
+            t.setWorkingDir(new File(project.getProjectDir(), "run"));
+            t.getMainClass().set("cpw.mods.bootstraplauncher.BootstrapLauncher");
         });
 
         project.afterEvaluate(project1 -> {
-            ResourceRepo.init(project1);
-
             ExtensionContainer ext = project1.getExtensions();
-            String version = ext.getByType(ClassicMCExt.class).getVersion().get();
 
             tasks.withType(Decomp.class).getByName("decompMC", task -> {
                 boolean src = ext.getByType(ClassicMCExt.class).getMappingType().equals(SOURCE);
@@ -329,17 +350,6 @@ public abstract class BasePlugin implements Plugin<Project> {
 
             tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> {
                 if (ext.getByType(ClassicMCExt.class).getMappingType().equals(SOURCE)) task.dependsOn(renamePatches);
-            });
-
-            genBSLRun.configure(task -> {
-                List<String> startModules = Arrays.asList("asm-", "bootstraplauncher-", "securejarhandler-");
-                ResolvedConfiguration cfg = task.getProject().getConfigurations().getByName("runtimeClasspath").getResolvedConfiguration();
-                task.getJvmArgs().add(cfg
-                        .getFiles().stream()
-                        .filter(f -> startModules.stream().anyMatch(f.getName()::startsWith))
-                        .map(File::getAbsolutePath)
-                        .collect(Collectors.joining(File.pathSeparator, "-p ", "")));
-                task.getAppArgs().add("--version=" + version);
             });
         });
     }

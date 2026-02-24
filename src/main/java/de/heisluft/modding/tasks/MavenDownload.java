@@ -1,7 +1,7 @@
 package de.heisluft.modding.tasks;
 
+import de.heisluft.modding.util.ArtifactIdentifier;
 import de.heisluft.modding.util.MavenMetaUtil;
-import net.minecraftforge.artifactural.api.artifact.ArtifactIdentifier;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.Property;
@@ -53,9 +53,9 @@ public abstract class MavenDownload extends DefaultTask {
   public abstract RegularFileProperty getOutput();
 
   public static void manualDownload(String repoUrl, ArtifactIdentifier id, File output) throws IOException {
-    String c = id.getClassifier() == null ? "" : "-" + id.getClassifier();
-    String ext = id.getExtension();
-    doExec(repoUrl, id.getGroup(), id.getName(), id.getVersion(), c, ext == null ? "jar" : ext, output);
+    String c = id.classifier == null ? "" : "-" + id.classifier;
+    String ext = id.extension;
+    doExec(repoUrl, id.groupId, id.artifactId, id.version, c, ext == null ? "jar" : ext, output);
   }
 
   private static void doExec(String repoUrl, String group, String name, String versionRaw, String classifier, String extension, File outputFile) throws IOException {
