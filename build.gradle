@@ -5,9 +5,12 @@ plugins {
 }
 
 group = 'de.heisluft.modding'
-version = '0.3.0-pre+141'
+version = '0.3.0-pre+142'
 
-java.toolchain.languageVersion = JavaLanguageVersion.of(11)
+java {
+  toolchain.languageVersion = JavaLanguageVersion.of(17)
+  withSourcesJar()
+}
 
 repositories {
   mavenCentral()
@@ -31,16 +34,6 @@ gradlePlugin{
   }
 }
 
-tasks.withType(JavaCompile).configureEach {
-  sourceCompatibility = targetCompatibility = JavaVersion.VERSION_1_8
-}
-
-tasks.register("sourcesJar", Jar) {
-  dependsOn(classes)
-  archiveClassifier.set 'sources'
-  from sourceSets.main.allSource
-}
-
 publishing {
   repositories.maven {
     url = mavenUrl
@@ -50,9 +43,7 @@ publishing {
     }
     authentication.withType(BasicAuthentication)
   }
-  publications.create('pluginMaven', MavenPublication) {
-    it.artifact sourcesJar
-  }
+  publications.create('pluginMaven', MavenPublication)
 }
 
 signing {
