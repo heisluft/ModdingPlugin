@@ -4,22 +4,15 @@ plugins {
   id 'maven-publish'
 }
 
-group 'de.heisluft.modding'
-version '0.3.0-pre+141'
+group = 'de.heisluft.modding'
+version = '0.3.0-pre+141'
 
-java.toolchain(a -> a.languageVersion.set(JavaLanguageVersion.of(11)))
-
-compileJava {
-  sourceCompatibility = targetCompatibility = JavaVersion.VERSION_1_8
-}
+java.toolchain.languageVersion = JavaLanguageVersion.of(11)
 
 repositories {
   mavenCentral()
   maven {
-    url 'https://maven.minecraftforge.net/'
-  }
-  maven {
-    url 'https://heisluft.de/maven/'
+    url = 'https://heisluft.de/maven/'
   }
 }
 
@@ -42,14 +35,15 @@ tasks.withType(JavaCompile).configureEach {
   sourceCompatibility = targetCompatibility = JavaVersion.VERSION_1_8
 }
 
-task sourcesJar(type: Jar, dependsOn: classes) {
+tasks.register("sourcesJar", Jar) {
+  dependsOn(classes)
   archiveClassifier.set 'sources'
   from sourceSets.main.allSource
 }
 
 publishing {
   repositories.maven {
-    url mavenUrl
+    url = mavenUrl
     credentials {
       username = mavenUsername
       password = mavenPassword
