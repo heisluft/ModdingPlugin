@@ -1,7 +1,6 @@
 package de.heisluft.modding.plugins;
 
 import de.heisluft.modding.extensions.ClassicMCExt;
-import de.heisluft.modding.repo.MCRepo;
 import de.heisluft.modding.tasks.ATApply;
 import de.heisluft.modding.tasks.Differ;
 import de.heisluft.modding.tasks.Extract;
@@ -24,193 +23,189 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
 import java.util.stream.Stream;
 
 import static de.heisluft.modding.extensions.ClassicMCExt.SOURCE;
 
 public class DeobfDataDevPlugin extends BasePlugin {
-    @Override
-    public void apply(Project project) {
-        super.apply(project);
+  @Override
+  public void apply(Project project) {
+    super.apply(project);
 
-        TaskContainer tasks = project.getTasks();
+    TaskContainer tasks = project.getTasks();
+    ClassicMCExt ext = project.getExtensions().getByType(ClassicMCExt.class);
 
-        tasks.getByName("classes").dependsOn(tasks.getByName(mcSourceSet.getClassesTaskName()));
+    Path deobfWorkspaceDir = project.file("deobf-workspace").toPath();
+    Path frgMappingsFile = deobfWorkspaceDir.resolve("fergie.frg");
+    Path frgChecksumFile = deobfWorkspaceDir.resolve("fergie.sha512");
+    Path srcMappingsFile = deobfWorkspaceDir.resolve("src.frg");
+    Path srcChecksumFile = deobfWorkspaceDir.resolve("src.sha512");
+    Path atFile = deobfWorkspaceDir.resolve("at.cfg");
+    Path atChecksumFile = deobfWorkspaceDir.resolve("at.sha512");
+    Path patchesDir = deobfWorkspaceDir.resolve("patches");
+    Path renamedPatchesDir = project.getLayout().getBuildDirectory().getAsFile().get().toPath().resolve("renamePatches");
 
-        Path deobfWorkspaceDir = project.file("deobf-workspace").toPath();
-        Path frgMappingsFile = deobfWorkspaceDir.resolve("fergie.frg");
-        Path frgChecksumFile = deobfWorkspaceDir.resolve("fergie.sha512");
-        Path srcMappingsFile = deobfWorkspaceDir.resolve("src.frg");
-        Path srcChecksumFile = deobfWorkspaceDir.resolve("src.sha512");
-        Path atFile = deobfWorkspaceDir.resolve("at.cfg");
-        Path atChecksumFile = deobfWorkspaceDir.resolve("at.sha512");
-        Path patchesDir = deobfWorkspaceDir.resolve("patches");
-        Path renamedPatchesDir = project.getLayout().getBuildDirectory().getAsFile().get().toPath().resolve("renamePatches");
+    try {
+      Files.createDirectories(patchesDir);
+      Files.createDirectories(renamedPatchesDir);
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
 
-        ClassicMCExt ext = project.getExtensions().getByType(ClassicMCExt.class);
+    TaskProvider<RestoreMeta> restoreMeta = tasks.named("restoreMeta", RestoreMeta.class,
+        task -> task.setMappingsFileName("mappings.frg")
+    );
 
-        RestoreMeta restoreMeta = tasks.withType(RestoreMeta.class).getByName("restoreMeta", task -> task.setMappingsFileName("mappings.frg"));
-
-        try {
-            Files.createDirectories(patchesDir);
-            Files.createDirectories(renamedPatchesDir);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-
-        TaskProvider<OutputtingJavaExec> genMappings = tasks.register("genMappings", OutputtingJavaExec.class, task -> {
-            task.classpath(deobfToolsJarFile);
-            task.setOutputFilename("mappings-generated.frg");
-            task.getMainClass().set("de.heisluft.deobf.tooling.Remapper");
-            task.args(
-                    "map",
-                    restoreMeta.getOutput().getAsFile().get().getAbsolutePath(),
-                    task.getOutput().getAsFile().get().getAbsolutePath(),
-                    "-s",
-                    restoreMeta.getMappings().getAsFile().get().getAbsolutePath()
-            );
-            // This cant be a lambda because Gradle will shit itself otherwise
-            //noinspection Convert2Lambda
-            task.doLast("copyToMainDir", new Action<Task>() {
-                @Override
-                public void execute(@Nonnull Task t) {
-                    try {
-                        if (!Files.isRegularFile(frgMappingsFile)) {
-                            Files.copy(task.getOutput().get().getAsFile().toPath(), frgMappingsFile);
-                            Files.write(frgChecksumFile, Util.SHA_512.digest(Files.readAllBytes(frgMappingsFile)));
-                        }
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-            });
-        });
-
-        TaskProvider<OutputtingJavaExec> genATs = tasks.register("genATs", OutputtingJavaExec.class, task -> {
-            task.dependsOn(restoreMeta);
-            task.classpath(deobfToolsJarFile);
-            task.setOutputFilename("at.cfg");
-            task.getMainClass().set("de.heisluft.deobf.tooling.at.ATGenerator");
-            task.args(
-                restoreMeta.getOutput().get().getAsFile().getAbsolutePath(),
-                task.getOutput().get().getAsFile().getAbsolutePath()
-            );
-            // This cant be a lambda because Gradle will shit itself otherwise
-            //noinspection Convert2Lambda
-            task.doLast("copyToMainDir", new Action<Task>() {
-                @Override
-                public void execute(@Nonnull Task t) {
-                    try {
-                        if (!Files.isRegularFile(atFile) && task.getOutput().get().getAsFile().exists()) {
-                            Files.copy(task.getOutput().get().getAsFile().toPath(), atFile);
-                            Files.write(atChecksumFile, Util.SHA_512.digest(Files.readAllBytes(atFile)));
-                        }
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-            });
-        });
-
-      tasks.withType(RemapTask.class).getByName("remapJarFrg", task -> {
-        task.dependsOn(genMappings);
-        task.getMappings().set(frgMappingsFile.toFile());
-      });
-
-      tasks.withType(ATApply.class).getByName("applyAts", task -> {
-            task.dependsOn(genATs);
-            task.getOutputs().upToDateWhen(t -> validateChecksumUpdating(atFile, atChecksumFile) && !tasks.getByName("remapJarFrg").getDidWork());
-            task.getATFile().set(atFile.toFile());
-        });
-
-        OutputtingJavaExec createFrg2SrcMappings = tasks.withType(OutputtingJavaExec.class).getByName("createFrg2SrcMappings", task -> {
-            task.getOutputs().upToDateWhen(t ->
-                validateChecksumUpdating(frgMappingsFile, frgChecksumFile) && validateChecksumUpdating(srcMappingsFile, srcChecksumFile)
-            );
-            task.args(
-                "genMediatorMappings",
-                frgMappingsFile.toAbsolutePath(),
-                srcMappingsFile.toAbsolutePath(),
-                "-o",
-                task.getOutput().get().getAsFile().getAbsolutePath()
-            );
-        });
-
-        tasks.withType(JavaExec.class).getByName("renamePatches", task -> task.args(
-            patchesDir.toAbsolutePath(),
-            createFrg2SrcMappings.getOutput().get().getAsFile().getAbsolutePath(),
-            renamedPatchesDir.toAbsolutePath())
-        );
-
-        tasks.withType(Differ.class).getByName("genPatches", task -> {
-
-            // This cant be a lambda because Gradle will shit itself otherwise
-            //noinspection Convert2Lambda
-            task.doLast(new Action<Task>() {
-                @Override
-                public void execute(@Nonnull Task t) {
-                    Path patchesPath = task.getPatchDir().getAsFile().get().toPath();
-                    try(Stream<Path> files = Files.walk(patchesPath)) {
-                        files.forEach(path -> {
-                            try {
-                                Files.copy(path, patchesDir.resolve(path.getFileName().toString()));
-                            } catch (IOException ex) {
-                                throw new UncheckedIOException(ex);
-                            }
-                        });
-                    } catch (IOException e) {
-                        throw new UncheckedIOException(e);
-                    }
-                }
-            });
-            task.getBackupSrcDir().set(((Extract) tasks.getByName("extractSrc")).getOutput());
-        });
-
-        tasks.withType(Zip2ZipCopy.class).getByName("stripLibraries", t -> {
-            t.getInput().set(ext.getVersion().flatMap(resolveMinecraftJar(project)));
-        });
-
-        tasks.withType(Patcher.class).getByName("applyCompilerPatches", task ->
-            task.getPatchDir().set(
-                project.getLayout().dir(ext.getMappingType().map(mappingType ->
-                    (SOURCE.equals(mappingType) ? renamedPatchesDir : patchesDir).toAbsolutePath().toFile()
-                ))
-            )
-        );
-
-        project.afterEvaluate(project1 -> {
-            ClassicMCExt ext1 = project1.getExtensions().getByType(ClassicMCExt.class);
-
-            if(SOURCE.equals(ext1.getMappingType().get())) {
-                try {
-                    if (!Files.isRegularFile(srcMappingsFile)) {
-                        Files.copy(frgMappingsFile, srcMappingsFile);
-                        Files.write(srcChecksumFile, Util.SHA_512.digest(Files.readAllBytes(srcMappingsFile)));
-                    }
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
+    TaskProvider<OutputtingJavaExec> genMappings = tasks.register("genMappings", OutputtingJavaExec.class, task -> {
+      task.classpath(deobfToolsJarFile);
+      task.setOutputFilename("mappings-generated.frg");
+      task.getMainClass().set("de.heisluft.deobf.tooling.Remapper");
+      task.getArgumentProviders().add(resolving(
+          "map",
+          restoreMeta.flatMap(RestoreMeta::getOutput),
+          task.getOutput(),
+          "-s", restoreMeta.flatMap(RestoreMeta::getMappings)
+      ));
+      // This cant be a lambda because Gradle will shit itself otherwise
+      //noinspection Convert2Lambda
+      task.doLast("copyToMainDir", new Action<Task>() {
+        @Override
+        public void execute(@Nonnull Task t) {
+          try {
+            if (!Files.isRegularFile(frgMappingsFile)) {
+              Files.copy(task.getOutput().get().getAsFile().toPath(), frgMappingsFile);
+              Files.write(frgChecksumFile, Util.SHA_512.digest(Files.readAllBytes(frgMappingsFile)));
             }
-
-            // Classic jars had their dependencies obfuscated, so we have to remap them, this is not the case for JarModDev, as there, the mappings already exist
-            if(!ext.getVersion().get().startsWith("in"))
-                tasks.withType(Zip2ZipCopy.class).getByName("stripLibraries", t -> t.getIncludedPaths().add("**"));
-            // TODO: add stripClassicLibraries back
-            //else tasks.withType(Zip2ZipCopy.class).getByName("stripClassicLibraries", t -> t.getIncludedPaths().add("**"));
-        });
-    }
-
-    private boolean validateChecksumUpdating(Path path, Path checksumPath) {
-        try {
-            byte[] computed = Util.SHA_512.digest(Files.readAllBytes(path));
-            // Don't cache if sha was deleted
-            boolean wasEqual = Files.isRegularFile(checksumPath) && Arrays.equals(Files.readAllBytes(checksumPath), computed);
-            if(!wasEqual) Files.write(checksumPath, computed); // Update / write new checksum
-            return wasEqual;
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+          } catch (IOException e) {
+            throw new RuntimeException(e);
+          }
         }
+      });
+    });
+
+    TaskProvider<OutputtingJavaExec> genATs = tasks.register("genATs", OutputtingJavaExec.class, task -> {
+      task.dependsOn(restoreMeta);
+      task.classpath(deobfToolsJarFile);
+      task.setOutputFilename("at.cfg");
+      task.getMainClass().set("de.heisluft.deobf.tooling.at.ATGenerator");
+      task.getArgumentProviders().add(resolving(
+          restoreMeta.flatMap(RestoreMeta::getOutput),
+          task.getOutput()
+      ));
+      // This cant be a lambda because Gradle will shit itself otherwise
+      //noinspection Convert2Lambda
+      task.doLast("copyToMainDir", new Action<Task>() {
+        @Override
+        public void execute(@Nonnull Task t) {
+          try {
+            if (!Files.isRegularFile(atFile) && task.getOutput().get().getAsFile().exists()) {
+              Files.copy(task.getOutput().get().getAsFile().toPath(), atFile);
+              Files.write(atChecksumFile, Util.SHA_512.digest(Files.readAllBytes(atFile)));
+            }
+          } catch (IOException e) {
+            throw new RuntimeException(e);
+          }
+        }
+      });
+    });
+
+    tasks.named("remapJarFrg", RemapTask.class, task -> {
+      task.dependsOn(genMappings);
+      task.getMappings().set(frgMappingsFile.toFile());
+    });
+
+    tasks.named("applyAts", ATApply.class, task -> {
+      task.dependsOn(genATs);
+      task.getOutputs().upToDateWhen(t -> validateChecksumUpdating(atFile, atChecksumFile) && !tasks.getByName("remapJarFrg").getDidWork());
+      task.getATFile().set(atFile.toFile());
+    });
+
+    OutputtingJavaExec createFrg2SrcMappings = tasks.withType(OutputtingJavaExec.class).getByName("createFrg2SrcMappings", task -> {
+      task.getOutputs().upToDateWhen(t ->
+          validateChecksumUpdating(frgMappingsFile, frgChecksumFile) && validateChecksumUpdating(srcMappingsFile, srcChecksumFile)
+      );
+      task.getArgumentProviders().add(resolving(
+          "genMediatorMappings",
+          frgMappingsFile,
+          srcMappingsFile,
+          "-o",
+          task.getOutput()
+      ));
+    });
+
+    tasks.named("renamePatches", JavaExec.class, task -> {
+      task.dependsOn(createFrg2SrcMappings);
+      task.getArgumentProviders().add(resolving(
+          patchesDir, createFrg2SrcMappings.getOutput(), renamedPatchesDir
+      ));
+    });
+
+    tasks.named("genPatches", Differ.class, task -> {
+      // This cant be a lambda because Gradle will shit itself otherwise
+      //noinspection Convert2Lambda
+      task.doLast(new Action<Task>() {
+        @Override
+        public void execute(@Nonnull Task t) {
+          Path patchesPath = task.getPatchDir().getAsFile().get().toPath();
+          try(Stream<Path> files = Files.walk(patchesPath)) {
+            files.forEach(path -> {
+              try {
+                Files.copy(path, patchesDir.resolve(path.getFileName().toString()));
+              } catch (IOException ex) {
+                throw new UncheckedIOException(ex);
+              }
+            });
+          } catch (IOException e) {
+            throw new UncheckedIOException(e);
+          }
+        }
+      });
+      task.getBackupSrcDir().set(tasks.named("extractSrc", Extract.class).flatMap(Extract::getOutput));
+    });
+
+    tasks.named("stripLibraries", Zip2ZipCopy.class, t -> {
+      t.getInput().set(ext.getVersion().flatMap(resolveMinecraftJar(project)));
+    });
+
+    tasks.named("applyCompilerPatches", Patcher.class, task ->
+        task.getPatchDir().set(
+            project.getLayout().dir(ext.getMappingType().map(mappingType ->
+                (SOURCE.equals(mappingType) ? renamedPatchesDir : patchesDir).toAbsolutePath().toFile()
+            ))
+        )
+    );
+
+    project.afterEvaluate(project1 -> {
+      ClassicMCExt ext1 = project1.getExtensions().getByType(ClassicMCExt.class);
+
+      if(SOURCE.equals(ext1.getMappingType().get())) {
+        try {
+          if (!Files.isRegularFile(srcMappingsFile)) {
+            Files.copy(frgMappingsFile, srcMappingsFile);
+            Files.write(srcChecksumFile, Util.SHA_512.digest(Files.readAllBytes(srcMappingsFile)));
+          }
+        } catch (IOException e) {
+          throw new UncheckedIOException(e);
+        }
+      }
+
+      // Classic jars had their dependencies obfuscated, so we have to remap them, this is not the case for JarModDev, as there, the mappings already exist
+      if(!ext.getVersion().get().startsWith("in"))
+        tasks.named("stripLibraries", Zip2ZipCopy.class, t -> t.getIncludedPaths().add("**"));
+      // TODO: add stripClassicLibraries back
+      //else tasks.named("stripClassicLibraries", Zip2ZipCopy.class, t -> t.getIncludedPaths().add("**"));
+    });
+  }
+
+  private boolean validateChecksumUpdating(Path path, Path checksumPath) {
+    try {
+      byte[] computed = Util.SHA_512.digest(Files.readAllBytes(path));
+      // Don't cache if sha was deleted
+      boolean wasEqual = Files.isRegularFile(checksumPath) && Arrays.equals(Files.readAllBytes(checksumPath), computed);
+      if(!wasEqual) Files.write(checksumPath, computed); // Update / write new checksum
+      return wasEqual;
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
     }
+  }
 }

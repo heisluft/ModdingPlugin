@@ -1,14 +1,11 @@
 package de.heisluft.modding.plugins;
 
 import de.heisluft.modding.extensions.ClassicMCExt;
-import de.heisluft.modding.repo.MCRepo;
 import de.heisluft.modding.tasks.*;
 import org.gradle.api.Project;
-import org.gradle.api.file.Directory;
 import org.gradle.api.tasks.*;
 
 import java.io.File;
-import java.io.IOException;
 import java.nio.file.Path;
 
 import static de.heisluft.modding.extensions.ClassicMCExt.SOURCE;
@@ -25,13 +22,21 @@ public class JarModDevPlugin extends BasePlugin {
 
     // We have to remap first as the Remapper cannot infer inheritance information for obfuscated
     // libs after they are stripped
-    RemapTask remapJarFrg = tasks.withType(RemapTask.class).getByName("remapJarFrg", task ->
+    TaskProvider<RemapTask> remapJarFrg = tasks.named("remapJarFrg", RemapTask.class, task ->
         task.getInput().set(ext.getVersion().flatMap(resolveMinecraftJar(project)))
     );
 
-    RestoreMeta restoreMeta = tasks.withType(RestoreMeta.class).getByName("restoreMeta", task -> task.getInput().set(remapJarFrg.getOutput()));
-    Zip2ZipCopy stripLibraries = tasks.withType(Zip2ZipCopy.class).getByName("stripLibraries", task -> task.getInput().set(restoreMeta.getOutput()));
-    tasks.withType(ATApply.class).getByName("applyAts", task -> task.getInput().set(stripLibraries.getOutput()));
+    TaskProvider<RestoreMeta> restoreMeta = tasks.named("restoreMeta", RestoreMeta.class, task ->
+        task.getInput().set(remapJarFrg.flatMap(OutputtingJavaExec::getOutput))
+    );
+
+    TaskProvider<Zip2ZipCopy> stripLibraries = tasks.named("stripLibraries", Zip2ZipCopy.class, task ->
+        task.getInput().set(restoreMeta.flatMap(OutputtingJavaExec::getOutput))
+    );
+
+    tasks.named("applyAts", ATApply.class, task ->
+        task.getInput().set(stripLibraries.flatMap(Zip2ZipCopy::getOutput))
+    );
 
     TaskProvider<MavenDownload> downloadDeobfData = tasks.register("downloadDeobfData", MavenDownload.class, task -> {
       task.getGroupName().set("de.heisluft.deobf.data");
@@ -40,33 +45,49 @@ public class JarModDevPlugin extends BasePlugin {
       task.getMavenRepoUrl().set(REPO_URL);
     });
 
-    TaskProvider<Extract> extractData = tasks.register("extractData", Extract.class, task -> {
-      task.dependsOn(downloadDeobfData);
-      task.getInput().set(downloadDeobfData.get().getOutput());
-    });
-
-    OutputtingJavaExec createFrg2SrcMappings  = tasks.withType(OutputtingJavaExec.class).getByName("createFrg2SrcMappings", task -> {
-      Directory out = extractData.get().getOutput().get();
-      task.args("genMediatorMappings", out.file("fergie.frg"), out.file("src.frg"), "-o", task.getOutput().get());
-    });
-
-    tasks.withType(JavaExec.class).getByName("renamePatches", task -> task.args(extractData.get().getOutput().get().dir("patches"), createFrg2SrcMappings.getOutput().get(), renamedPatchesDir));
-
-    tasks.withType(RemapTask.class).getByName("remapJarFrg", task -> {
-      task.dependsOn(extractData);
-      task.getMappings().set(extractData.get().getOutput().get().file("fergie.frg"));
-    });
-    tasks.withType(ATApply.class).getByName("applyAts", task -> task.getATFile().set(extractData.get().getOutput().get().file("at.cfg")));
-
-    Patcher applyCompilerPatches = tasks.withType(Patcher.class).getByName("applyCompilerPatches", task ->
-      task.getPatchDir().set(extractData.get().getOutput().dir("patches"))
+    TaskProvider<Extract> extractData = tasks.register("extractData", Extract.class, task ->
+      task.getInput().set(downloadDeobfData.flatMap(MavenDownload::getOutput))
     );
 
-    tasks.getByName("genPatches", task -> ((Differ) task).getBackupSrcDir().set(applyCompilerPatches.getOutput()));
+    TaskProvider<OutputtingJavaExec> createFrg2SrcMappings = tasks.named("createFrg2SrcMappings", OutputtingJavaExec.class, task -> {
+      task.dependsOn(extractData);
+      task.getArgumentProviders().add(resolving(
+          "genMediatorMappings",
+          extractData.flatMap(t -> t.getOutput().file("fergie.frg")),
+          extractData.flatMap(t -> t.getOutput().file("src.frg")),
+          "-o", task.getOutput()
+      ));
+    });
+
+    tasks.named("renamePatches", JavaExec.class, task -> {
+          task.dependsOn(createFrg2SrcMappings);
+          task.getArgumentProviders().add(resolving(
+              extractData.flatMap(e -> e.getOutput().dir("patches")),
+              createFrg2SrcMappings.flatMap(OutputtingJavaExec::getOutput),
+              renamedPatchesDir
+          ));
+        }
+    );
+
+    tasks.named("remapJarFrg", RemapTask.class, task -> {
+      task.getMappings().set(extractData.flatMap(t -> t.getOutput().file("fergie.frg")));
+    });
+
+    tasks.named("applyAts", ATApply.class, task ->
+        task.getATFile().set(extractData.flatMap(t -> t.getOutput().file("at.cfg")))
+    );
+
+    TaskProvider<Patcher> applyCompilerPatches = tasks.named("applyCompilerPatches", Patcher.class, task ->
+      task.getPatchDir().set(extractData.flatMap(t -> t.getOutput().dir("patches")))
+    );
+
+    tasks.named("genPatches", Differ.class, task ->
+        task.getBackupSrcDir().set(applyCompilerPatches.flatMap(Patcher::getOutput))
+    );
 
     project.afterEvaluate(project1 -> {
       boolean srcRemapping = project1.getExtensions().getByType(ClassicMCExt.class).getMappingType().get().equals(SOURCE);
-      tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> {
+      tasks.named("applyCompilerPatches", Patcher.class, task -> {
         File patchesDir = extractData.get().getOutput().get().dir("patches").getAsFile();
         if(patchesDir.isDirectory()) task.getPatchDir().set(srcRemapping ? renamedPatchesDir.toFile() : patchesDir);
       });
