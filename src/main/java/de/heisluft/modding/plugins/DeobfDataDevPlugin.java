@@ -49,6 +49,8 @@ public class DeobfDataDevPlugin extends BasePlugin {
         Path patchesDir = deobfWorkspaceDir.resolve("patches");
         Path renamedPatchesDir = project.getLayout().getBuildDirectory().getAsFile().get().toPath().resolve("renamePatches");
 
+        ClassicMCExt ext = project.getExtensions().getByType(ClassicMCExt.class);
+
         RestoreMeta restoreMeta = tasks.withType(RestoreMeta.class).getByName("restoreMeta", task -> task.setMappingsFileName("mappings.frg"));
 
         try {
@@ -166,20 +168,22 @@ public class DeobfDataDevPlugin extends BasePlugin {
             task.getBackupSrcDir().set(((Extract) tasks.getByName("extractSrc")).getOutput());
         });
 
+        tasks.withType(Zip2ZipCopy.class).getByName("stripLibraries", t -> {
+            t.getInput().set(ext.getVersion().flatMap(resolveMinecraftJar(project)));
+        });
+
+        tasks.withType(Patcher.class).getByName("applyCompilerPatches", task ->
+            task.getPatchDir().set(
+                project.getLayout().dir(ext.getMappingType().map(mappingType ->
+                    (SOURCE.equals(mappingType) ? renamedPatchesDir : patchesDir).toAbsolutePath().toFile()
+                ))
+            )
+        );
+
         project.afterEvaluate(project1 -> {
-            ClassicMCExt ext = project1.getExtensions().getByType(ClassicMCExt.class);
-            boolean srcRemapping = SOURCE.equals(ext.getMappingType().get());
-            String version = ext.getVersion().get();
+            ClassicMCExt ext1 = project1.getExtensions().getByType(ClassicMCExt.class);
 
-            tasks.withType(Zip2ZipCopy.class).getByName("stripLibraries", t -> {
-                try {
-                    t.getInput().set(MCRepo.getInstance().resolve("minecraft", version).toFile());
-                } catch(IOException e) {
-                    throw new RuntimeException(e);
-                }
-            });
-
-            if(srcRemapping) {
+            if(SOURCE.equals(ext1.getMappingType().get())) {
                 try {
                     if (!Files.isRegularFile(srcMappingsFile)) {
                         Files.copy(frgMappingsFile, srcMappingsFile);
@@ -191,12 +195,10 @@ public class DeobfDataDevPlugin extends BasePlugin {
             }
 
             // Classic jars had their dependencies obfuscated, so we have to remap them, this is not the case for JarModDev, as there, the mappings already exist
-            if(!version.startsWith("in"))
+            if(!ext.getVersion().get().startsWith("in"))
                 tasks.withType(Zip2ZipCopy.class).getByName("stripLibraries", t -> t.getIncludedPaths().add("**"));
             // TODO: add stripClassicLibraries back
             //else tasks.withType(Zip2ZipCopy.class).getByName("stripClassicLibraries", t -> t.getIncludedPaths().add("**"));
-
-            tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> task.getPatchDir().set((srcRemapping ? renamedPatchesDir : patchesDir).toFile()));
         });
     }
 

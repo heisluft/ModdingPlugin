@@ -1,6 +1,8 @@
 package de.heisluft.modding.tasks;
 
 import org.gradle.api.DefaultTask;
+import org.gradle.api.artifacts.ConfigurationContainer;
+import org.gradle.api.artifacts.ResolvedArtifact;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.provider.SetProperty;
@@ -23,6 +25,9 @@ public abstract class CPFileDecorator extends DefaultTask {
   @Input
   public abstract SetProperty<File> getPaths();
 
+  @InputFile
+  public abstract RegularFileProperty getMinecraftJarPath();
+
   public CPFileDecorator() {
     getPaths().convention(new HashSet<>());
     getOutput().set(getProject().getLayout().getBuildDirectory().dir(getName()).map(dir -> dir.file("cp.txt")));
@@ -32,10 +37,16 @@ public abstract class CPFileDecorator extends DefaultTask {
   @TaskAction
   public void generate() throws IOException {
     Set<File> bootStrapCP = new HashSet<>(getPaths().get());
-    bootStrapCP.addAll(getProject().getConfigurations().getByName("runtimeClasspath").getResolvedConfiguration().getFiles());
-    Set<File> gameCP = getProject().getConfigurations().getByName("mcRuntimeClasspath").getResolvedConfiguration().getFiles();
+    ConfigurationContainer cfg = getProject().getConfigurations();
+    cfg.getByName("runtimeClasspath").getResolvedConfiguration().getResolvedArtifacts().stream()
+        .map(ResolvedArtifact::getFile)
+        .forEach(bootStrapCP::add);
+    Set<File> gameCP = new HashSet<>();
+    cfg.getByName("mcRuntimeClasspath").getResolvedConfiguration().getResolvedArtifacts().stream()
+        .map(ResolvedArtifact::getFile)
+        .forEach(gameCP::add);
     bootStrapCP.removeAll(gameCP);
-    gameCP.add(getProject().getExtensions().getByType(JavaPluginExtension.class).getSourceSets().getByName("mc").getOutput().getClassesDirs().iterator().next().getAbsoluteFile());
+    gameCP.add(getMinecraftJarPath().get().getAsFile());
     Files.write(getOutput().get().getAsFile().toPath(), bootStrapCP.stream().map(File::getAbsolutePath).collect(Collectors.toList()));
     Files.write(getGameCPFile().get().getAsFile().toPath(), gameCP.stream().map(File::getAbsolutePath).collect(Collectors.toList()));
   }

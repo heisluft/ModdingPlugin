@@ -20,8 +20,18 @@ public class JarModDevPlugin extends BasePlugin {
     super.apply(project);
 
     Path renamedPatchesDir = project.getLayout().getBuildDirectory().getAsFile().get().toPath().resolve("renamePatches");
-
+    ClassicMCExt ext =  project.getExtensions().getByType(ClassicMCExt.class);
     TaskContainer tasks = project.getTasks();
+
+    // We have to remap first as the Remapper cannot infer inheritance information for obfuscated
+    // libs after they are stripped
+    RemapTask remapJarFrg = tasks.withType(RemapTask.class).getByName("remapJarFrg", task ->
+        task.getInput().set(ext.getVersion().flatMap(resolveMinecraftJar(project)))
+    );
+
+    RestoreMeta restoreMeta = tasks.withType(RestoreMeta.class).getByName("restoreMeta", task -> task.getInput().set(remapJarFrg.getOutput()));
+    Zip2ZipCopy stripLibraries = tasks.withType(Zip2ZipCopy.class).getByName("stripLibraries", task -> task.getInput().set(restoreMeta.getOutput()));
+    tasks.withType(ATApply.class).getByName("applyAts", task -> task.getInput().set(stripLibraries.getOutput()));
 
     TaskProvider<MavenDownload> downloadDeobfData = tasks.register("downloadDeobfData", MavenDownload.class, task -> {
       task.getGroupName().set("de.heisluft.deobf.data");
@@ -55,26 +65,11 @@ public class JarModDevPlugin extends BasePlugin {
     tasks.getByName("genPatches", task -> ((Differ) task).getBackupSrcDir().set(applyCompilerPatches.getOutput()));
 
     project.afterEvaluate(project1 -> {
-      ClassicMCExt ext = project1.getExtensions().getByType(ClassicMCExt.class);
-      boolean srcRemapping = ext.getMappingType().get().equals(SOURCE);
-
-      // We have to remap first as the Remapper cannot infer inheritance information for obfuscated
-      // libs after they are stripped
-      RemapTask ta = tasks.withType(RemapTask.class).getByName("remapJarFrg", t -> {
-        try {
-          t.getInput().set(MCRepo.getInstance().resolve("minecraft", ext.getVersion().get()).toFile());
-        } catch(IOException e) {
-          throw new RuntimeException(e);
-        }
-      });
-      RestoreMeta ta1 = tasks.withType(RestoreMeta.class).getByName("restoreMeta", task -> task.getInput().set(ta.getOutput()));
-      Zip2ZipCopy ta2 = tasks.withType(Zip2ZipCopy.class).getByName("stripLibraries", task -> task.getInput().set(ta1.getOutput()));
-      tasks.withType(ATApply.class).getByName("applyAts", task -> task.getInput().set(ta2.getOutput()));
+      boolean srcRemapping = project1.getExtensions().getByType(ClassicMCExt.class).getMappingType().get().equals(SOURCE);
       tasks.withType(Patcher.class).getByName("applyCompilerPatches", task -> {
         File patchesDir = extractData.get().getOutput().get().dir("patches").getAsFile();
         if(patchesDir.isDirectory()) task.getPatchDir().set(srcRemapping ? renamedPatchesDir.toFile() : patchesDir);
       });
-
     });
   }
 }

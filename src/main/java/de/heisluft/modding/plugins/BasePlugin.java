@@ -10,19 +10,22 @@ import org.gradle.api.Action;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
+import org.gradle.api.Transformer;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.Dependency;
 import org.gradle.api.artifacts.DependencySet;
 import org.gradle.api.artifacts.ResolvedArtifact;
 import org.gradle.api.artifacts.dsl.DependencyHandler;
 import org.gradle.api.file.DuplicatesStrategy;
+import org.gradle.api.file.RegularFile;
 import org.gradle.api.file.RegularFileProperty;
-import org.gradle.api.plugins.ExtensionContainer;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.provider.Property;
+import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.*;
 import org.gradle.api.tasks.compile.JavaCompile;
+import org.gradle.jvm.tasks.Jar;
 import org.gradle.jvm.toolchain.JavaLanguageVersion;
 import org.gradle.jvm.toolchain.JavaToolchainService;
 import org.gradle.jvm.toolchain.JavaToolchainSpec;
@@ -36,7 +39,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -100,7 +102,7 @@ public abstract class BasePlugin implements Plugin<Project> {
         // We don't want things like modlauncher to be available to the mc source code
         // so implementation will not cover that
         Configuration mcImplCfg = project.getConfigurations().getByName("mcImplementation");
-        project.getConfigurations().getByName("implementation").setExtendsFrom(Collections.singleton(mcImplCfg));
+        project.getConfigurations().getByName("implementation").extendsFrom(mcImplCfg);
         project.getTasks().withType(JavaCompile.class).forEach(javaCompile -> {
             javaCompile.getOptions().setEncoding("UTF-8");
             // We want to ensure basic binary compatability with mojang.
@@ -157,25 +159,6 @@ public abstract class BasePlugin implements Plugin<Project> {
         TaskContainer tasks = project.getTasks();
 
         tasks.getByName("classes").dependsOn(tasks.getByName(mcSourceSet.getClassesTaskName()));
-
-        TaskProvider<Zip2ZipCopy> makeAssetJar = tasks.register("makeAssetJar", Zip2ZipCopy.class, task -> {
-            task.getOutput().set(versionProp.flatMap(version ->
-                    project.getLayout()
-                        .getBuildDirectory()
-                        .dir(task.getName())
-                        .map(dir -> dir.file("minecraft-assets-" + version + ".jar"))
-            ));
-            task.getIncludedPaths().addAll(Arrays.asList("**.png", "**.gif", "**.md3", "**.MD3"));
-            task.getInput().fileProvider(versionProp.map(version -> {
-              try {
-                return MCRepo.getInstance().resolve("minecraft", version).toFile();
-              } catch(IOException e) {
-                throw new RuntimeException(e);
-              }
-            }));
-        });
-
-        mcImplDeps.add(d.create(project.files(makeAssetJar)));
 
         TaskProvider<Zip2ZipCopy> stripLibraries = tasks.register("stripLibraries", Zip2ZipCopy.class, task -> {
             task.getIncludedPaths().add("util/**");
@@ -242,8 +225,7 @@ public abstract class BasePlugin implements Plugin<Project> {
         TaskProvider<Decomp> decompMC = tasks.register("decompMC", Decomp.class, task -> {
             task.dependsOn(downloadFernFlower, applyAts);
             task.classpath(downloadFernFlower.get().getOutput());
-            task.getInput().set((applyAts.get().getATFile().getAsFile().get().exists() ? applyAts : remapJarFrg).get().getOutput());
-            if(mappingTypeProp.get().equals(SOURCE)) task.getInput().set(remapJarSrc.get().getOutput());
+            task.getInput().set(mappingTypeProp.flatMap(mt -> (SOURCE.equals(mt) ? remapJarSrc : applyAts.get().getATFile().getAsFile().get().exists() ? applyAts : remapJarFrg).get().getOutput()));
         });
 
         TaskProvider<Extract> extractSrc = tasks.register("extractSrc", Extract.class, task -> task.getInput().set(decompMC.get().getOutput()));
@@ -271,6 +253,14 @@ public abstract class BasePlugin implements Plugin<Project> {
             });
             if(mappingTypeProp.get().equals(SOURCE)) task.dependsOn(renamePatches);
         });
+
+        TaskProvider<Extract> extractAssets = tasks.register("extractAssets", Extract.class, task -> {
+            task.getIncludedPaths().addAll(Arrays.asList("**.png", "**.md3", "**.MD3", "**.gif"));
+            task.getInput().set(versionProp.flatMap(resolveMinecraftJar(project)));
+            task.getOutput().set(mcSourceSet.getResources().getSrcDirs().iterator().next());
+        });
+
+        tasks.getByName(mcSourceSet.getProcessResourcesTaskName()).mustRunAfter(extractAssets);
 
         TaskProvider<Copy> copySrc = tasks.register("copySrc", Copy.class, task -> {
             task.dependsOn(applyCompilerPatches);
@@ -305,6 +295,7 @@ public abstract class BasePlugin implements Plugin<Project> {
                 public void execute(@Nonnull Task t) {
                     try {
                         Util.deleteContents(task.getDestinationDir());
+                        Util.deleteContents(extractAssets.get().getOutput().get().getAsFile());
                     } catch (IOException ex) {
                         throw new UncheckedIOException(ex);
                     }
@@ -318,7 +309,16 @@ public abstract class BasePlugin implements Plugin<Project> {
             task.getModifiedSrcDir().set(mcSourceSet.getJava().getSrcDirs().iterator().next());
         });
 
-        TaskProvider<CPFileDecorator> genCPFiles = tasks.register("genCPFiles", CPFileDecorator.class);
+        TaskProvider<Jar> mcJar = tasks.register("mcJar", Jar.class, task -> {
+            task.dependsOn(copySrc, extractAssets);
+            task.from(mcSourceSet.getOutput());
+            task.getArchiveBaseName().set("minecraft");
+            task.getArchiveVersion().set(versionProp);
+        });
+
+        TaskProvider<CPFileDecorator> genCPFiles = tasks.register("genCPFiles", CPFileDecorator.class, task ->
+            task.getMinecraftJarPath().set(mcJar.get().getArchiveFile())
+        );
 
         tasks.register("launchMC", JavaExec.class, t -> {
             t.dependsOn(genCPFiles, mcSourceSet.getCompileJavaTaskName(), "compileJava");
@@ -345,5 +345,14 @@ public abstract class BasePlugin implements Plugin<Project> {
             t.setWorkingDir(new File(project.getProjectDir(), "run"));
             t.getMainClass().set("cpw.mods.bootstraplauncher.BootstrapLauncher");
         });
+    }
+    public final Transformer<Provider<RegularFile>, String> resolveMinecraftJar(Project project) {
+        return  version -> project.getLayout().file(project.provider(() -> {
+            try {
+                return MCRepo.getInstance().resolve("minecraft", version).toAbsolutePath().toFile();
+            } catch(IOException e) {
+                throw new RuntimeException(e);
+            }
+        }));
     }
 }
