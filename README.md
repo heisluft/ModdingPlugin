@@ -4,10 +4,12 @@ A gradle plugin suite for developing Mods for Minecraft Classic, Indev and Infde
 `I am in no way affiliated with Mojang or Microsoft, all rights to the Minecraft game and branding
 belong to their respective owners.`
 ## How to use this
-This Repo defines two plugins, only one of which shall be explained here:
-The JarModDev Plugin, which, using Mappings I already crafted, allows to
-easily generate Patches as well as AccessTransformers and Plugins for MML.
-It requires Gradle 8.8. 
+This Repo defines two plugins:
+- The JarModDev plugin, which, using mappings I already crafted, allows to
+easily generate patches as well as AccessTransformer configurations.
+- The DeobfDataDev Plugin, whi I use to generate said mappings.
+
+- This toolchain requires Gradle 9.3.1 and a minimum Java version of 17. 
 
 Into your `settings.gradle`, put this:
 ```groovy
@@ -16,23 +18,20 @@ pluginManagement {
     maven {
       url 'https://heisluft.de/maven/'
     }
-    maven {
-      url 'https://maven.minecraftforge.net/'
-    }
   }
 }
 ```
 Then, into your `build.gradle`, put this:
 ```groovy
 plugins {
- id 'de.heisluft.modding.classic.jarmoddev' version '0.3.0-pre+65'
+ id 'de.heisluft.modding.classic.jarmoddev' version '0.3.0-pre+142'
 }
 
 ...
 
 classicMC {
   version = mcVersion
-  mappingType "type" // either 'fergie' or 'source' 
+  mappingType = 'type' // either 'fergie' or 'source' 
 }
 ```
 This will already give you the toolchain you need for working with mc. Including applying patches to guarantee recompilation
@@ -62,32 +61,25 @@ This will already give you the toolchain you need for working with mc. Including
 - All game versions available are supported. If you have got a missing version, feel free to contact me.
 - For generating your mc source code use the task 'regenSrc'.
 **Be Careful:** `It will wipe out your previously made changes, save your Patches!`
-- For generating a run config use 'genBSLRun', this will automatically register a run config for IntelliJ. The config may be added to via task config:
+- The Code is run using the `launchMC` task. By default this just launches BSL without *any* arguments, customise it to adjust Environment Vars, VM Options and Program Arguments.
+- You will need to add all your sourceSets to the classpath manually. This can be done by configuring the `genCPFiles` task:
     ```groovy
-    genBSLRun {
-        jvmArgs.addAll "myArgs"
-        appArgs.add "myAppArg"
-    }
-    ```
-- You will need to add all your sourceSets to the classpath manually. This can be done by configuring the `makeCPFile` task:
-    ```groovy
-    makeCPFile {
+    genCPFiles {
         paths.addAll sourceSets.getByName("main").output.classesDirs
         paths.add sourceSets.getByName("main").output.resourcesDir
     }
     ```
 ## History
 This plugin started out as an attempt to streamline my many .sh files for working with Minecraft
-Classc into a more mature Toolchain, making it easy to
+classic into a more mature Toolchain, making it easy to
 start mapping attempts for a diverse version range.
 
 I originally started decompiling and deobfuscating old Minecraft versions
-as a Real Life test case for my Deobfuscation Tool Library, initially i used LegacyLancher
+as a Real Life test case for my Deobfuscation Tool Library, initially using LegacyLancher
 from the forge team for launching the game, but soon I had a
 much more outlandish idea: How about launching with McModLauncher, on a
 JPMS enabled configuration?
 
 ## Shoutouts
-- Mojang, and Notch for creating this beautiful game
-- cpw et al for creating LegacyLauncher and ModLauncher
-- The MinecraftForge team for creating Artifactural.
+- Mojang, for creating this beautiful game
+- cpw et al., for creating LegacyLauncher and ModLauncher
