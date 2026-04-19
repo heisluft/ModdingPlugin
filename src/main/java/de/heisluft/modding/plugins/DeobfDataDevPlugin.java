@@ -36,9 +36,9 @@ public class DeobfDataDevPlugin extends BasePlugin {
     ClassicMCExt ext = project.getExtensions().getByType(ClassicMCExt.class);
 
     Path deobfWorkspaceDir = project.file("deobf-workspace").toPath();
-    Path frgMappingsFile = deobfWorkspaceDir.resolve("fergie.frg");
+    Path frgMappingsFile = deobfWorkspaceDir.resolve("fergie.frg2");
     Path frgChecksumFile = deobfWorkspaceDir.resolve("fergie.sha512");
-    Path srcMappingsFile = deobfWorkspaceDir.resolve("src.frg");
+    Path srcMappingsFile = deobfWorkspaceDir.resolve("src.frg2");
     Path srcChecksumFile = deobfWorkspaceDir.resolve("src.sha512");
     Path atFile = deobfWorkspaceDir.resolve("at.cfg");
     Path atChecksumFile = deobfWorkspaceDir.resolve("at.sha512");
@@ -53,7 +53,7 @@ public class DeobfDataDevPlugin extends BasePlugin {
     }
 
     TaskProvider<RestoreMeta> restoreMeta = tasks.named("restoreMeta", RestoreMeta.class,
-        task -> task.setMappingsFileName("mappings.frg")
+        task -> task.setMappingsFileName("mappings.frg2")
     );
 
     TaskProvider<OutputtingJavaExec> genMappings = tasks.register("genMappings", OutputtingJavaExec.class, task -> {
@@ -68,15 +68,15 @@ public class DeobfDataDevPlugin extends BasePlugin {
       ));
       // This cant be a lambda because Gradle will shit itself otherwise
       //noinspection Convert2Lambda
-      task.doLast("copyToMainDir", new Action<Task>() {
+      task.doLast("copyToMainDir", new Action<>() {
         @Override
         public void execute(@Nonnull Task t) {
           try {
-            if (!Files.isRegularFile(frgMappingsFile)) {
+            if(!Files.isRegularFile(frgMappingsFile)) {
               Files.copy(task.getOutput().get().getAsFile().toPath(), frgMappingsFile);
               Files.write(frgChecksumFile, Util.SHA_512.digest(Files.readAllBytes(frgMappingsFile)));
             }
-          } catch (IOException e) {
+          } catch(IOException e) {
             throw new RuntimeException(e);
           }
         }
@@ -94,15 +94,15 @@ public class DeobfDataDevPlugin extends BasePlugin {
       ));
       // This cant be a lambda because Gradle will shit itself otherwise
       //noinspection Convert2Lambda
-      task.doLast("copyToMainDir", new Action<Task>() {
+      task.doLast("copyToMainDir", new Action<>() {
         @Override
         public void execute(@Nonnull Task t) {
           try {
-            if (!Files.isRegularFile(atFile) && task.getOutput().get().getAsFile().exists()) {
+            if(!Files.isRegularFile(atFile) && task.getOutput().get().getAsFile().exists()) {
               Files.copy(task.getOutput().get().getAsFile().toPath(), atFile);
               Files.write(atChecksumFile, Util.SHA_512.digest(Files.readAllBytes(atFile)));
             }
-          } catch (IOException e) {
+          } catch(IOException e) {
             throw new RuntimeException(e);
           }
         }
@@ -143,7 +143,7 @@ public class DeobfDataDevPlugin extends BasePlugin {
     tasks.named("genPatches", Differ.class, task -> {
       // This cant be a lambda because Gradle will shit itself otherwise
       //noinspection Convert2Lambda
-      task.doLast(new Action<Task>() {
+      task.doLast(new Action<>() {
         @Override
         public void execute(@Nonnull Task t) {
           Path patchesPath = task.getPatchDir().getAsFile().get().toPath();
@@ -151,11 +151,11 @@ public class DeobfDataDevPlugin extends BasePlugin {
             files.forEach(path -> {
               try {
                 Files.copy(path, patchesDir.resolve(path.getFileName().toString()));
-              } catch (IOException ex) {
+              } catch(IOException ex) {
                 throw new UncheckedIOException(ex);
               }
             });
-          } catch (IOException e) {
+          } catch(IOException e) {
             throw new UncheckedIOException(e);
           }
         }
@@ -163,9 +163,7 @@ public class DeobfDataDevPlugin extends BasePlugin {
       task.getBackupSrcDir().set(tasks.named("extractSrc", Extract.class).flatMap(Extract::getOutput));
     });
 
-    tasks.named("stripLibraries", Zip2ZipCopy.class, t -> {
-      t.getInput().set(ext.getVersion().flatMap(resolveMinecraftJar(project)));
-    });
+    tasks.named("stripLibraries", Zip2ZipCopy.class, t -> t.getInput().set(ext.getVersion().flatMap(resolveMinecraftJar(project))));
 
     tasks.named("applyCompilerPatches", Patcher.class, task ->
         task.getPatchDir().set(

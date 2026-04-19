@@ -185,7 +185,7 @@ public abstract class BasePlugin implements Plugin<Project> {
       task.getInput().set(remapJarFrg.get().getOutput());
       // This cant be a lambda because Gradle will shit itself otherwise
       //noinspection Convert2Lambda
-      task.doLast(new Action<Task>() {
+      task.doLast(new Action<>() {
         @Override
         public void execute(@Nonnull Task t) {
           RegularFileProperty out = ((OutputtingJavaExec) t).getOutput();
@@ -242,12 +242,12 @@ public abstract class BasePlugin implements Plugin<Project> {
       task.getInput().set(extractSrc.get().getOutput());
       // This cant be a lambda because Gradle will shit itself otherwise
       //noinspection Convert2Lambda
-      task.doFirst(new Action<Task>() { // If work needs to be done, we have to first purge the output
+      task.doFirst(new Action<>() { // If work needs to be done, we have to first purge the output
         @Override
         public void execute(@Nonnull Task task) {
           try {
-            Util.deleteContents(((Patcher)task).getOutput().getAsFile().get());
-          } catch (IOException e) {
+            Util.deleteContents(((Patcher) task).getOutput().getAsFile().get());
+          } catch(IOException e) {
             throw new UncheckedIOException(e);
           }
         }
@@ -291,13 +291,13 @@ public abstract class BasePlugin implements Plugin<Project> {
       task.setDuplicatesStrategy(DuplicatesStrategy.INCLUDE);
       // This cant be a lambda because Gradle will shit itself otherwise
       //noinspection Convert2Lambda
-      task.doFirst(new Action<Task>() {
+      task.doFirst(new Action<>() {
         @Override
         public void execute(@Nonnull Task t) {
           try {
             Util.deleteContents(task.getDestinationDir());
             Util.deleteContents(extractAssets.get().getOutput().get().getAsFile());
-          } catch (IOException ex) {
+          } catch(IOException ex) {
             throw new UncheckedIOException(ex);
           }
         }

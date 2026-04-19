@@ -69,9 +69,9 @@ public class JarModDevPlugin extends BasePlugin {
         }
     );
 
-    tasks.named("remapJarFrg", RemapTask.class, task -> {
-      task.getMappings().set(extractData.flatMap(t -> t.getOutput().file("fergie.frg")));
-    });
+    tasks.named("remapJarFrg", RemapTask.class, task ->
+      task.getMappings().set(extractData.flatMap(t -> t.getOutput().file("fergie.frg")))
+    );
 
     tasks.named("applyAts", ATApply.class, task ->
         task.getATFile().set(extractData.flatMap(t -> t.getOutput().file("at.cfg")))
